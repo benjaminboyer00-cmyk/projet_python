@@ -1,0 +1,20 @@
+# Environnement virtuel
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.pytest_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Rapports générés par main.py
+output/
+
+# Éditeurs / OS
+.vscode/
+.idea/
+.DS_Store

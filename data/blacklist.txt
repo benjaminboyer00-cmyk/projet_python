@@ -1,0 +1,6 @@
+# Liste noire d'adresses IP (une par ligne)
+203.0.113.66
+198.51.100.23
+185.220.101.4
+45.33.32.156   # IP connue, inactive dans ce jeu
+91.189.0.17
