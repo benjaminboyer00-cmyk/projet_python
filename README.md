@@ -1,6 +1,8 @@
 # Engine de traitement et d'analyse de flux de données sécurisé
 
-Projet final ING3 — Python 3.10+ — trinôme : *Nom 1, Nom 2, Nom 3*
+Projet final ING3 — Python 3.10+
+
+Équipe : **Benjamin Boyer, Gabriel Guery, Ismail Yacoub, Ilyan Dalmassi**
 
 Plateforme en ligne de commande qui ingère, filtre, transforme et analyse des
 journaux de logs système/réseau **sans jamais charger les fichiers entiers en
