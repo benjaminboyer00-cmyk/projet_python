@@ -1,6 +1,7 @@
 """Tests du Module 4 : moteur de règles et audit."""
 
 import json
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -98,3 +99,19 @@ def test_audit_report_from_globals_and_locals(tmp_path: Path) -> None:
 
     path = export_audit_report(tmp_path / "audit.json", scope=locals())
     assert json.loads(path.read_text(encoding="utf-8"))["scopes"]
+
+
+def test_partial_rule_without_name_is_supported() -> None:
+    rule = partial(rule_blacklisted_ip, blacklist=frozenset({"10.0.0.5"}))
+    report = apply_security_rules(rule, records=[make_record()])
+    assert report.total_hits == 1
+    assert report.rules_applied[0].startswith("functools.partial")
+
+
+def test_registry_rules_all_accept_config_kwargs() -> None:
+    # Régression : une fonction utilitaire préfixée "rule_" était
+    # découverte par globals() et échouait sur chaque enregistrement.
+    report = apply_security_rules(*available_rules().values(),
+                                  records=[make_record(level="CRITICAL")],
+                                  blacklist=frozenset(), extra_option=1)
+    assert report.rule_errors == {}

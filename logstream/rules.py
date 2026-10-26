@@ -172,6 +172,15 @@ class RuleEngineReport:
         return sum(self.hits_by_rule.values())
 
 
+def describe_rule(rule: SecurityRule) -> str:
+    """Nom lisible d'une règle (fonction, lambda, partial, objet...).
+
+    Attention : ne pas préfixer les fonctions utilitaires par ``rule_``,
+    sinon ``available_rules()`` les prendrait pour des règles.
+    """
+    return getattr(rule, "__name__", None) or repr(rule)
+
+
 def _evaluate(rules: tuple[SecurityRule, ...], record: LogRecord,
               config: dict[str, Any],
               report: RuleEngineReport) -> Iterator[tuple[str, str]]:
@@ -184,11 +193,13 @@ def _evaluate(rules: tuple[SecurityRule, ...], record: LogRecord,
         try:
             detail = rule(record, **config)
         except Exception as exc:  # une règle défaillante ne bloque pas tout
-            logger.warning("La règle %s a échoué : %s", rule.__name__, exc)
-            report.rule_errors[rule.__name__] += 1
+            name = describe_rule(rule)
+            if not report.rule_errors[name]:  # un seul avertissement
+                logger.warning("La règle %s a échoué : %s", name, exc)
+            report.rule_errors[name] += 1
             continue
         if detail is not None:
-            yield rule.__name__, detail
+            yield describe_rule(rule), detail
 
 
 def apply_security_rules(*args: SecurityRule,
@@ -232,18 +243,18 @@ def apply_security_rules(*args: SecurityRule,
         raise RuleEngineError("Aucune règle de sécurité fournie")
 
     report = RuleEngineReport(
-        rules_applied=tuple(map(lambda rule: rule.__name__, rules)),
+        rules_applied=tuple(map(describe_rule, rules)),
         config={key: type(value).__name__ for key, value in kwargs.items()},
     )
 
     for record in records:
         report.records_checked += 1
-        for rule_name, detail in _evaluate(rules, record, kwargs, report):
-            report.hits_by_rule[rule_name] += 1
+        for name, detail in _evaluate(rules, record, kwargs, report):
+            report.hits_by_rule[name] += 1
             if len(report.alerts) >= store_limit:
                 continue
             report.alerts.append({
-                "rule": rule_name,
+                "rule": name,
                 "ip": record["ip"],
                 "timestamp": record["timestamp"].isoformat(),
                 "level": record["level"],

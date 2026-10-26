@@ -5,7 +5,7 @@ Mise en forme des résultats (console) et export JSON.
 import json
 import logging
 from collections.abc import Mapping
-from dataclasses import asdict, is_dataclass
+from dataclasses import fields, is_dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -30,7 +30,10 @@ def to_jsonable(value: Any) -> Any:
             return {str(key): to_jsonable(item)
                     for key, item in value.items()}
         case _ if is_dataclass(value) and not isinstance(value, type):
-            return to_jsonable(asdict(value))
+            # Conversion champ par champ : dataclasses.asdict() échoue sur
+            # les champs defaultdict avant Python 3.12.
+            return {item.name: to_jsonable(getattr(value, item.name))
+                    for item in fields(value)}
         case _:
             return value
 

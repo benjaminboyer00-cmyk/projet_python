@@ -14,8 +14,10 @@ source .venv/bin/activate             # Windows : .venv\Scripts\activate
 pip install -r requirements.txt       # environnement figé (pip freeze)
 ```
 
-Le fichier `requirements.txt` a été généré par `pip freeze` dans le venv du
-projet. Le cœur du moteur n'utilise **que la bibliothèque standard** ; les
+Le fichier `requirements.txt` a été généré par `pip freeze` dans un venv
+**Python 3.10** (version minimale exigée), afin que toutes les versions
+épinglées s'installent de Python 3.10 à 3.13. Le projet est testé sous
+Python 3.10 et 3.13. Le cœur du moteur n'utilise **que la bibliothèque standard** ; les
 dépendances listées servent au rapport (`matplotlib`, `notebook`), aux tests
 (`pytest`) et au contrôle qualité (`flake8`, `mypy`).
 
@@ -44,7 +46,7 @@ python scripts/generate_dataset.py --lines 1000000 --output /tmp/gros_jeu
 Contrôles qualité :
 
 ```bash
-pytest                    # 55 tests unitaires et d'intégration
+pytest                    # 60 tests unitaires et d'intégration
 flake8                    # conformité PEP 8
 mypy logstream main.py    # vérification du typage
 ```

@@ -33,3 +33,10 @@ def test_main_missing_file_returns_error(tmp_path: Path) -> None:
 def test_main_unknown_rule_returns_error(sample_log_file: Path) -> None:
     assert main.main(["--files", str(sample_log_file),
                       "--rules", "rule_inconnue"]) == 2
+
+
+def test_main_default_dataset_has_no_rule_errors(
+        tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    assert main.main(["--output-dir", str(tmp_path), "--no-audit",
+                      "--no-memory-trace"]) == 0
+    assert "a échoué" not in caplog.text
