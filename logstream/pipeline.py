@@ -4,15 +4,19 @@ Module 2 - Pipeline de transformation & programmation fonctionnelle.
 Le pipeline est une chaîne d'itérateurs **paresseux** construite avec
 ``map()`` et ``filter()`` :
 
-    entrées brutes
-      -> map(strip)              nettoyage des chaînes
-      -> filter(None)            suppression des entrées vides
-      -> filter(lambda)          suppression des commentaires
-      -> map(decode_line)        ligne texte -> str / dict / tuple
-      -> map(route_entry)        routage match-case -> LogRecord | None
-      -> filter(None)            suppression des entrées non parsables
-      -> filter(is_valid_record) prédicats lambda de validation
-      -> map(normalize_record)   normalisation + message f-string
+Les étapes, dans l'ordre :
+
+1. ``map(strip)`` nettoie les espaces en début et fin de ligne ;
+2. ``filter(None)`` retire les lignes vides ;
+3. ``filter(lambda)`` retire les commentaires ;
+4. ``map(decode_line)`` transforme chaque ligne en chaîne, dictionnaire
+   ou tuple selon son format ;
+5. ``map(route_entry)`` aiguille chaque entrée avec un match-case et
+   renvoie un ``LogRecord`` ou ``None`` si l'entrée est illisible ;
+6. ``filter(None)`` retire ces entrées illisibles ;
+7. ``filter(is_valid_record)`` applique les prédicats de validation ;
+8. ``map(normalize_record)`` normalise l'enregistrement et construit
+   son message avec une f-string.
 
 Rien n'est calculé lors de la construction : chaque enregistrement
 traverse toute la chaîne au moment où le consommateur le demande. La
@@ -169,7 +173,7 @@ def summarize_payload(payload: Payload) -> str:
     """Résumé lisible du payload (utilisé dans le message final)."""
     match payload:
         case {"method": method, "path": path, "status": status}:
-            return f"{method} {path} -> {status}"
+            return f"{method} {path} (statut {status})"
         case {"event": "login", "status": status}:
             return f"login {status}"
         case {"event": "connection", "port": port}:

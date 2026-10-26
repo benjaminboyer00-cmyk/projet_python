@@ -1,154 +1,252 @@
-# Engine de traitement et d'analyse de flux de données sécurisé
+# Moteur d'analyse de logs sécurisé
 
-Projet final ING3 — Python 3.10+
+Projet final de Python, ING3.
 
-Équipe : **Benjamin Boyer, Gabriel Guery, Ismail Yacoub, Ilyan Dalmassi**
+Équipe : Benjamin Boyer, Gabriel Guery, Ismail Yacoub et Ilyan Dalmassi.
 
-Plateforme en ligne de commande qui ingère, filtre, transforme et analyse des
-journaux de logs système/réseau **sans jamais charger les fichiers entiers en
-mémoire** (chaîne de générateurs paresseux).
+## Le projet en quelques mots
 
-## Installation
+On nous a demandé de construire un outil en ligne de commande capable de lire
+des fichiers de logs (serveur web, serveur d'authentification, pare-feu), de
+les nettoyer, de les analyser et de repérer des comportements suspects, comme
+une attaque par force brute ou une adresse IP présente sur une liste noire.
+
+La contrainte principale était de ne jamais charger un fichier entier en
+mémoire. Nous avons donc construit tout le traitement autour de générateurs :
+les lignes sont lues une par une, transformées une par une, puis oubliées dès
+qu'elles ont été comptées. Que le fichier fasse mille lignes ou un million, la
+mémoire utilisée reste à peu près la même.
+
+Tout le projet est écrit en Python. Le cœur du moteur n'utilise que la
+bibliothèque standard. Les bibliothèques externes du fichier requirements.txt
+servent uniquement au rapport (matplotlib et Jupyter), aux tests (pytest) et
+aux vérifications de qualité du code (flake8 et mypy).
+
+## Comment tester le projet
+
+Il faut Python 3.10 ou une version plus récente. Pour vérifier :
 
 ```bash
-python3 -m venv .venv                 # environnement virtuel isolé
-source .venv/bin/activate             # Windows : .venv\Scripts\activate
-pip install -r requirements.txt       # environnement figé (pip freeze)
+python3 --version
 ```
 
-Le fichier `requirements.txt` a été généré par `pip freeze` dans un venv
-**Python 3.10** (version minimale exigée), afin que toutes les versions
-épinglées s'installent de Python 3.10 à 3.13. Le projet est testé sous
-Python 3.10 et 3.13. Le cœur du moteur n'utilise **que la bibliothèque standard** ; les
-dépendances listées servent au rapport (`matplotlib`, `notebook`), aux tests
-(`pytest`) et au contrôle qualité (`flake8`, `mypy`).
-
-## Utilisation
+### 1. Récupérer le projet
 
 ```bash
-python main.py                                  # analyse le jeu de test de data/
-python main.py -v                               # avec journalisation INFO
-python main.py --threshold 8 --window 60        # paramètres de force brute
+git clone https://github.com/benjaminboyer00-cmyk/projet_python.git
+cd projet_python
+```
+
+### 2. Créer l'environnement virtuel et installer les dépendances
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+Sous Windows, la deuxième commande s'écrit `.venv\Scripts\activate`.
+Une fois l'environnement activé, le nom `(.venv)` apparaît au début de la
+ligne de commande. Il faudra le réactiver à chaque nouveau terminal.
+
+### 3. Lancer la démonstration
+
+```bash
+python main.py
+```
+
+Le programme analyse le jeu de test fourni dans le dossier `data` et affiche
+le résultat de chaque module dans le terminal : le nombre de lignes lues et
+rejetées, la répartition des logs par niveau, les adresses IP en erreur, les
+attaques par force brute détectées, les alertes des règles de sécurité et la
+mémoire maximale utilisée. Deux fichiers sont aussi créés dans le dossier
+`output` : `analysis_report.json` avec tous les résultats, et
+`audit_report.json` avec l'audit des variables du programme.
+
+### 4. Lancer les tests
+
+```bash
+pytest
+```
+
+Les 60 tests doivent tous passer. Ils vérifient chaque module séparément, puis
+le programme complet. Pour voir le détail de chaque test, ajoutez `-v`.
+
+On peut aussi vérifier que le code respecte les conventions PEP 8 et que les
+annotations de type sont cohérentes :
+
+```bash
+flake8
+mypy logstream main.py
+```
+
+Aucune de ces deux commandes ne doit afficher d'erreur.
+
+### 5. Ouvrir le rapport
+
+```bash
+jupyter notebook notebooks/rapport.ipynb
+```
+
+Le notebook est déjà exécuté, on peut donc le lire directement, y compris sur
+GitHub. Pour le relancer, utilisez le menu Run puis Run All Cells.
+
+### 6. Essayer d'autres réglages
+
+Le programme accepte plusieurs options. Voici les plus utiles :
+
+```bash
+python main.py --help
+python main.py -v
+python main.py --threshold 8 --window 60
+python main.py --files data/auth_server.log
 python main.py --rules rule_blacklisted_ip rule_injection_attempt
-python main.py --files data/auth_server.log     # fichiers au choix
-python main.py --simulate 20000                 # flux simulé (str/dict/tuple)
-python main.py --help                           # toutes les options
+python main.py --simulate 20000
 ```
 
-Résultats : affichage console + `output/analysis_report.json` (statistiques,
-alertes) et `output/audit_report.json` (introspection `globals()`/`locals()`).
+L'option `-v` affiche les messages de journalisation pendant le traitement.
+`--threshold` et `--window` règlent la détection de force brute : par défaut,
+une IP est signalée après 5 échecs de connexion en moins de 300 secondes.
+`--files` permet d'analyser ses propres fichiers. `--rules` choisit les règles
+de sécurité à appliquer. `--simulate` remplace les fichiers par un flux
+généré à la volée, qui mélange des chaînes, des dictionnaires et des tuples.
 
-Régénérer le jeu de données (reproductible grâce à une graine fixe) :
+Pour tester sur un très gros volume et constater que la mémoire ne grimpe pas,
+on peut générer un nouveau jeu de données :
 
 ```bash
-python scripts/generate_dataset.py              # 5000 événements par fichier
 python scripts/generate_dataset.py --lines 1000000 --output /tmp/gros_jeu
+python main.py --files /tmp/gros_jeu/*.log
 ```
 
-Contrôles qualité :
+Sans option, `scripts/generate_dataset.py` régénère le jeu de test du dossier
+`data`. Il utilise une graine fixe, donc le résultat est toujours identique.
 
-```bash
-pytest                    # 60 tests unitaires et d'intégration
-flake8                    # conformité PEP 8
-mypy logstream main.py    # vérification du typage
+## Organisation du code
+
+Le point d'entrée est `main.py`. Il lit les options de la ligne de commande,
+enchaîne les quatre modules et affiche les résultats.
+
+Le code du moteur se trouve dans le package `logstream` :
+
+- `config.py` regroupe les constantes : niveaux valides, liste noire par
+  défaut, ports suspects, seuils de détection.
+- `models.py` définit les types de données, notamment le dictionnaire
+  `LogRecord` et le tuple `(IP, Port, Protocole)`.
+- `exceptions.py` contient nos exceptions personnalisées.
+- `ingestion.py` lit les fichiers ligne par ligne avec des générateurs
+  (module 1).
+- `parsing.py` transforme chaque ligne en dictionnaire typé (module 1).
+- `pipeline.py` enchaîne le nettoyage, le filtrage et la normalisation avec
+  `map`, `filter`, des lambdas et un match-case (module 2).
+- `aggregation.py` calcule les statistiques avec des `set`, des `frozenset`
+  et des `defaultdict` (module 3).
+- `detection.py` repère les attaques par force brute (module 3).
+- `rules.py` contient le moteur de règles `apply_security_rules` (module 4).
+- `audit.py` inspecte les variables du programme avec `globals()` et
+  `locals()` (module 4).
+- `simulator.py` génère le jeu de test et le flux simulé.
+- `reporting.py` s'occupe de l'affichage et de l'export JSON.
+
+Le reste du dépôt contient le jeu de test (`data`), le script qui le génère
+(`scripts`), les tests (`tests`), le rapport (`notebooks/rapport.ipynb`) et
+l'énoncé du projet.
+
+## Les données de test
+
+Le dossier `data` contient trois fichiers de logs et une liste noire d'IP.
+Ils mélangent volontairement trois formats de lignes, pour vérifier que le
+programme sait tous les traiter.
+
+Une ligne texte, où les champs sont séparés par des barres verticales :
+
+```
+2026-10-20T08:15:32 | WARNING | 203.0.113.7:22/SSH | root | {"event": "login", "status": "failed"}
 ```
 
-Rapport : `notebooks/rapport.ipynb` (déjà exécuté, graphiques inclus ;
-relancer avec `jupyter notebook notebooks/rapport.ipynb`).
-
-## Arborescence
+Une ligne JSON complète :
 
 ```
-projet_python/
-├── main.py                  # point d'entrée : pilote tout le pipeline
-├── requirements.txt         # pip freeze
-├── setup.cfg                # configuration flake8 / mypy / pytest
-├── logstream/               # package principal
-│   ├── config.py            # constantes (frozenset, tuples)
-│   ├── models.py            # types : LogRecord (dict), ConnectionMeta (tuple)
-│   ├── exceptions.py        # exceptions personnalisées
-│   ├── ingestion.py         # Module 1 : générateurs yield / yield from
-│   ├── parsing.py           # Module 1 : parsing en dictionnaires typés
-│   ├── pipeline.py          # Module 2 : map / filter / lambda / match-case
-│   ├── aggregation.py       # Module 3 : set / frozenset / defaultdict
-│   ├── detection.py         # Module 3 : force brute (while/for/break/continue/else)
-│   ├── rules.py             # Module 4 : apply_security_rules(*args, **kwargs)
-│   ├── audit.py             # Module 4 : introspection globals() / locals()
-│   ├── simulator.py         # génération du jeu de test et du flux simulé
-│   └── reporting.py         # affichage console et export JSON
-├── scripts/
-│   └── generate_dataset.py  # (re)génère data/
-├── data/                    # jeu de données de test fourni
-│   ├── web_server.log       # requêtes HTTP + erreurs JSON
-│   ├── auth_server.log      # connexions SSH + rafales de force brute
-│   ├── firewall.log         # événements CONN + messages système
-│   └── blacklist.txt        # IP blacklistées
-├── tests/                   # tests pytest
-└── notebooks/
-    └── rapport.ipynb        # rapport synthétique avec graphiques
+{"timestamp": "2026-10-20T08:00:00", "level": "ERROR", "code": 500, "ip": "10.0.0.3"}
 ```
 
-## Format des données
+Une ligne de connexion du pare-feu :
 
-Trois formats coexistent dans les fichiers (et des lignes parasites
-volontaires : vides, commentaires, corrompues, IP ou niveaux invalides) :
+```
+CONN 2026-10-20T08:00:10 203.0.113.66 23 TCP
+```
 
-| Format | Exemple | Devient |
-|---|---|---|
-| Ligne texte | `2026-10-20T08:15:32 \| WARNING \| 203.0.113.7:22/SSH \| root \| {"event": "login", "status": "failed"}` | `str` |
-| JSON | `{"timestamp": "...", "level": "ERROR", "code": 500, "ip": "10.0.0.3", ...}` | `dict` |
-| Connexion | `CONN 2026-10-20T08:00:10 203.0.113.66 23 TCP` | `tuple` |
+Nous avons aussi glissé des lignes à problème : lignes vides, commentaires,
+JSON cassé, adresses IP impossibles, niveaux inconnus. Le programme doit les
+écarter sans s'arrêter, et il indique combien il en a rejeté.
 
-Chaque entrée valide est convertie en dictionnaire `LogRecord` :
+Chaque ligne valide devient un dictionnaire de ce genre :
 
 ```python
 {
     "timestamp": datetime(2026, 10, 20, 8, 15, 32),
     "level": "WARNING",
-    "source": ("203.0.113.7", 22, "SSH"),   # tuple immuable (IP, Port, Protocole)
+    "source": ("203.0.113.7", 22, "SSH"),
     "ip": "203.0.113.7",
     "user_id": "root",
-    "payload": {"event": "login", "status": "failed"},   # dict ou str brute
+    "payload": {"event": "login", "status": "failed"},
     "category": "AUTH",
     "origin_format": "raw",
     "message": "[2026-10-20 08:15:32] WARNING  203.0.113.7:22 ...",
 }
 ```
 
-## Correspondance avec le cahier des charges
+## Où trouver chaque point du cahier des charges
 
-| Exigence | Où |
-|---|---|
-| Générateur `yield` ligne par ligne | `ingestion.read_log_file` |
-| Sous-générateur `yield from` sur plusieurs fichiers | `ingestion.read_log_sources`, `read_streams` |
-| Parsing en dictionnaires, types variés | `parsing.py`, `models.LogRecord` |
-| Tuples pour les métadonnées fixes | `models.ConnectionMeta`, `parsing.parse_source` |
-| `filter()` + `lambda`, `filter(None, ...)` | `pipeline.build_pipeline`, `pipeline.VALIDATORS` |
-| `map()` de normalisation (casse, nettoyage, f-strings) | `pipeline.normalize_record` |
-| `match-case` : chaîne brute / dict / tuple de connexion | `pipeline.route_entry` (aussi `decode_line`, `categorize`, `summarize_payload`) |
-| `set` des IP ayant généré des erreurs | `aggregation.TrafficStatistics.error_ips` |
-| `frozenset` blacklist + `\|`, `&`, `-`, `^` | `aggregation.compare_ip_sets` |
-| `defaultdict` (pas de `KeyError`) | `aggregation.TrafficStatistics`, `count_by`, `detection` |
-| Force brute : `while` + `for`, `break`, `continue`, `else` | `detection.detect_brute_force` |
-| `apply_security_rules(*args, **kwargs)` | `rules.apply_security_rules` |
-| Fonctions de première classe | règles passées en argument, `VALIDATORS`, `make_off_hours_rule` (closure), `chain_transforms` |
-| `globals()` / `locals()` + export d'un rapport | `audit.build_audit_report`, `audit.export_audit_report`, `main.run`, `rules.available_rules` |
-| Point d'entrée `main.py` | `main.py` |
-| Rapport `.ipynb` | `notebooks/rapport.ipynb` |
+Module 1, ingestion. Le générateur qui lit un fichier ligne par ligne avec
+`yield` est `read_log_file` dans `ingestion.py`. La lecture de plusieurs
+fichiers à la suite avec `yield from` se fait dans `read_log_sources` et
+`read_streams`. Le découpage des lignes en dictionnaires typés est dans
+`parsing.py`, et le tuple `(IP, Port, Protocole)` est construit par
+`parse_source`.
 
-## Choix techniques
+Module 2, pipeline. La chaîne de `map` et de `filter`, avec des lambdas et
+`filter(None, ...)`, est construite par `build_pipeline` dans `pipeline.py`.
+Les lambdas de validation sont regroupées dans `VALIDATORS`. La normalisation
+du texte et la construction du message avec une f-string se font dans
+`normalize_record`. Le match-case qui distingue une chaîne brute, un
+dictionnaire et un tuple de connexion est dans `route_entry`. On en trouve
+aussi dans `decode_line`, `categorize` et `summarize_payload`.
 
-- **Mémoire constante.** Toute la chaîne (lecture → parsing → filtrage →
-  normalisation) est paresseuse. Les analyses (statistiques, force brute,
-  règles) relisent chacune les fichiers via un pipeline neuf plutôt que de
-  stocker les enregistrements : relire un fichier coûte du temps disque,
-  stocker coûterait de la RAM proportionnelle aux données. Mesure
-  (`tracemalloc`) : de 15 000 à 450 000 lignes, le pic passe de ~1,3 Mo à
-  ~2 Mo seulement (ce qui reste vient de la liste des alertes).
-- **Robustesse.** Une ligne invalide lève `LogParseError`, interceptée dans
-  `route_entry` qui renvoie `None` ; `filter(None, ...)` l'élimine sans
-  interrompre le flux. Un fichier absent est signalé et ignoré. Une règle de
-  sécurité qui plante est comptabilisée dans `rule_errors` sans arrêter le
-  moteur. `main.py` renvoie un code de sortie non nul en cas d'erreur.
-- **Extensibilité.** Ajouter une règle = écrire une fonction `rule_xxx` dans
-  `rules.py` ; elle est découverte automatiquement via `globals()`.
+Module 3, agrégation. L'ensemble des IP ayant produit des erreurs est
+`error_ips`, dans la classe `TrafficStatistics` de `aggregation.py`. Les
+opérations entre les IP actives et la liste noire (union, intersection,
+différence et différence symétrique) sont dans `compare_ip_sets`. Les
+compteurs utilisent des `defaultdict`. La détection de force brute, avec une
+boucle `while` qui contient une boucle `for`, et l'usage de `break`,
+`continue` et `else`, se trouve dans `detect_brute_force` (`detection.py`).
+
+Module 4, règles et introspection. La fonction
+`apply_security_rules(*args, **kwargs)` est dans `rules.py`. Les règles y sont
+passées comme de simples fonctions, ce qui illustre les fonctions de première
+classe. On en trouve d'autres exemples avec `VALIDATORS`, la fermeture
+`make_off_hours_rule` et `chain_transforms`. L'audit par `globals()` et
+`locals()`, avec export du rapport, est dans `audit.py`. Il est appelé à la fin
+de `main.py`. Enfin, `available_rules` utilise `globals()` pour retrouver
+toutes les règles.
+
+## Nos choix
+
+Pour garder une mémoire constante, chaque analyse relit les fichiers depuis
+le début au lieu de garder les enregistrements en mémoire. Relire un fichier
+prend un peu plus de temps, mais ne consomme presque pas de mémoire. Nous
+l'avons mesuré avec `tracemalloc` : en passant de 15 000 à 450 000 lignes, le
+pic de mémoire passe seulement d'environ 1,3 Mo à 2 Mo, et ce qui augmente
+vient surtout de la liste des alertes.
+
+Le programme ne doit pas planter sur une mauvaise ligne. Quand une ligne est
+illisible, le parsing lève une `LogParseError`. Elle est rattrapée dans
+`route_entry`, qui renvoie `None`, puis `filter(None, ...)` retire la ligne
+sans interrompre le flux. Un fichier introuvable est signalé puis ignoré. Une
+règle de sécurité qui plante est comptée dans `rule_errors`, mais le moteur
+continue avec les autres. En cas d'erreur, `main.py` renvoie un code de sortie
+différent de zéro.
+
+Ajouter une règle de sécurité est simple : il suffit d'écrire une fonction
+dont le nom commence par `rule_` dans `rules.py`. Elle est retrouvée
+automatiquement grâce à `globals()`.

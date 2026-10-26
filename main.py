@@ -203,7 +203,7 @@ def print_statistics(stats: TrafficStatistics,
                      blacklist: frozenset[str]) -> None:
     """Affiche le bilan du module 3 (agrégation)."""
     print(title("MODULE 3 - Agrégation"))
-    print(f"  Période : {stats.first_timestamp} -> {stats.last_timestamp}")
+    print(f"  Période : du {stats.first_timestamp} au {stats.last_timestamp}")
     print("\n  Répartition par niveau :")
     print(format_levels(stats.by_level))
     print("\n  Répartition par catégorie :")

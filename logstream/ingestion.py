@@ -106,7 +106,8 @@ def load_blacklist(path: PathLike | None = None) -> frozenset[str]:
     le générateur ``read_log_file``.
 
     Args:
-        path: chemin du fichier. ``None`` -> liste noire par défaut.
+        path: chemin du fichier. Si ``None``, on utilise la liste noire
+            par défaut.
 
     Returns:
         Un ``frozenset`` d'adresses IP (vide si le fichier est vide).

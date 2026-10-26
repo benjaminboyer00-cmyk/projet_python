@@ -3,11 +3,11 @@ Module 1 - Parsing & modélisation des données.
 
 Transforme chaque entrée brute en un dictionnaire ``LogRecord`` typé :
 
-* horodatage      -> ``datetime``
-* niveau          -> ``str`` (INFO, WARNING, ERROR, CRITICAL)
-* source          -> ``tuple`` immuable ``(IP, Port, Protocole)``
-* utilisateur     -> ``str`` ou ``None``
-* payload         -> ``dict`` (JSON décodé) ou ``str`` (chaîne brute)
+* l'horodatage devient un ``datetime`` ;
+* le niveau reste une ``str`` (INFO, WARNING, ERROR, CRITICAL) ;
+* la source devient un ``tuple`` immuable ``(IP, Port, Protocole)`` ;
+* l'utilisateur est une ``str`` ou ``None`` ;
+* le payload est un ``dict`` (JSON décodé) ou une ``str`` (chaîne brute).
 
 Trois formats d'entrée sont supportés :
 
@@ -127,9 +127,9 @@ def categorize(payload: Payload) -> str:
 def decode_line(line: str) -> RawEntry:
     """Identifie le format d'une ligne texte et la convertit.
 
-    * ``{...}``                     -> ``dict`` (JSON)
-    * ``CONN ts ip port proto``     -> ``tuple`` (ts, ip, port, proto)
-    * autre                         -> ``str`` inchangée
+    * une ligne ``{...}`` donne un ``dict`` (JSON) ;
+    * une ligne ``CONN ts ip port proto`` donne un ``tuple`` ;
+    * toute autre ligne est renvoyée telle quelle (``str``).
 
     Returns:
         L'entrée décodée, prête à être routée par le pipeline.

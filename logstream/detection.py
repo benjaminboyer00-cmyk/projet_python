@@ -164,7 +164,7 @@ def detect_brute_force(
             if max_alerts is not None and len(result.alerts) >= max_alerts:
                 logger.warning("Limite de %d alertes atteinte : arrêt",
                                max_alerts)
-                break  # sort du for -> le else du for est ignoré
+                break  # on sort du for, donc son else est ignoré
         else:
             # Exécuté seulement si le for n'a PAS rencontré de break :
             # le cycle a été entièrement traité.
