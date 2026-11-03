@@ -2,7 +2,7 @@
 
 Projet final de Python, ING3.
 
-Équipe : Benjamin Boyer, Gabriel Guery, Ismail Yacoub et Ilyan Dalmassi.
+Équipe : Benjamin Boyer, Gabriel Guery, Ismail Yacoub et Ilyan Lalmassi.
 
 ## Le projet en quelques mots
 
