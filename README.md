@@ -91,7 +91,37 @@ jupyter notebook notebooks/rapport.ipynb
 Le notebook est déjà exécuté, on peut donc le lire directement, y compris sur
 GitHub. Pour le relancer, utilisez le menu Run puis Run All Cells.
 
-### 6. Essayer d'autres réglages
+### 6. Interface graphique (Flutter)
+
+C'est un bonus, l'énoncé ne demande pas d'interface. Tout est calculé par
+`main.py`, l'interface lit juste les fichiers JSON de `output` et affiche les
+résultats de chaque module.
+
+Installer Flutter (une fois, sous Ubuntu) :
+
+```bash
+sudo snap install flutter --classic
+sudo apt install clang ninja-build libgtk-3-dev
+flutter doctor
+```
+
+Lancer l'interface depuis la racine du projet :
+
+```bash
+cd gui
+flutter run -d linux
+```
+
+On tape le chemin d'un fichier log dans la barre (par exemple
+`data/auth_server.log`) puis on clique sur « Lancer l'analyse » : l'interface
+exécute `main.py --files <fichier>` et affiche les résultats. Si la barre est
+vide, tous les logs de `data` sont analysés.
+
+Si l'appli plante au démarrage avec une erreur `antialiasing`, c'est le
+terminal de VS Code (installé avec snap) qui pose problème : il faut la lancer
+depuis un terminal normal.
+
+### 7. Essayer d'autres réglages
 
 Le programme accepte plusieurs options. Voici les plus utiles :
 
@@ -149,8 +179,10 @@ Le code du moteur se trouve dans le package `logstream` :
 - `reporting.py` s'occupe de l'affichage et de l'export JSON.
 
 Le reste du dépôt contient le jeu de test (`data`), le script qui le génère
-(`scripts`), les tests (`tests`), le rapport (`notebooks/rapport.ipynb`) et
-l'énoncé du projet.
+(`scripts`), les tests (`tests`), le rapport (`notebooks/rapport.ipynb`),
+l'interface graphique Flutter (`gui`) et l'énoncé du projet.
+
+L'interface tient dans un seul fichier, `gui/lib/main.dart`.
 
 ## Les données de test
 
