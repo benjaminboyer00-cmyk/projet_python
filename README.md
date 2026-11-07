@@ -109,8 +109,12 @@ Lancer l'interface depuis la racine du projet :
 
 ```bash
 cd gui
+flutter create --platforms=linux .   # seulement la première fois
 flutter run -d linux
 ```
+
+Le dépôt ne contient que `pubspec.yaml` et `lib/main.dart`, la commande
+`flutter create` génère le reste des fichiers dont Flutter a besoin.
 
 On tape le chemin d'un fichier log dans la barre (par exemple
 `data/auth_server.log`) puis on clique sur « Lancer l'analyse » : l'interface
