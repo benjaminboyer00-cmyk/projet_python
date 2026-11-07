@@ -3,6 +3,11 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+// couleur ece
+const couleurEce = Color(0xFF00737A);
+
+const gras = TextStyle(fontWeight: FontWeight.bold);
+
 void main() {
   runApp(const MaterialApp(home: Accueil()));
 }
@@ -26,23 +31,35 @@ class _AccueilState extends State<Accueil> {
       message = 'Analyse en cours...';
     });
 
-    // on lance main.py depuis le dossier du projet (le parent de gui/)
+    // si le champ est vide main.py prend tout data/
     List<String> arguments = ['main.py'];
     if (fichier.text != '') {
       arguments.add('--files');
       arguments.add(fichier.text);
     }
-    var res = await Process.run('python3', arguments, workingDirectory: '..');
 
-    if (res.exitCode != 0) {
-      setState(() => message = 'Erreur : ${res.stderr}');
+    // .. car on lance l'appli depuis gui/
+    var resultat = await Process.run(
+      'python3',
+      arguments,
+      workingDirectory: '..',
+    );
+
+    if (resultat.exitCode != 0) {
+      setState(() {
+        message = 'Erreur : ${resultat.stderr}';
+      });
       return;
     }
 
-    // on lit les rapports json écrits par main.py
+    // main.py ecrit les resultats dans output/
+    String texteAnalyse = File('../output/analysis_report.json').readAsStringSync();
+    String texteAudit = File('../output/audit_report.json').readAsStringSync();
+
     setState(() {
-      analyse = jsonDecode(File('../output/analysis_report.json').readAsStringSync());
-      audit = jsonDecode(File('../output/audit_report.json').readAsStringSync());
+      analyse = jsonDecode(texteAnalyse);
+      audit = jsonDecode(texteAudit);
+      message = '';
     });
   }
 
@@ -55,51 +72,61 @@ class _AccueilState extends State<Accueil> {
           labelText: 'Fichier log (vide = tous les logs de data/)',
         ),
       ),
-      ElevatedButton(onPressed: lancer, child: const Text('Lancer l\'analyse')),
+      const SizedBox(height: 10),
+      ElevatedButton(
+        onPressed: lancer,
+        child: const Text('Lancer l\'analyse'),
+      ),
       Text(message),
     ];
 
     if (analyse != null) {
-      Map p = analyse!['pipeline'];
-      Map s = analyse!['statistics'];
-      Map ip = analyse!['ip_sets'];
-      Map bf = analyse!['brute_force'];
+      Map pipeline = analyse!['pipeline'];
+      Map stats = analyse!['statistics'];
+      Map ensembles = analyse!['ip_sets'];
+      Map forceBrute = analyse!['brute_force'];
       Map regles = analyse!['rules']['hits_by_rule'];
 
-      lignes.add(const Text('\nModule 1 : ingestion', style: TextStyle(fontWeight: FontWeight.bold)));
-      lignes.add(Text('Lignes lues : ${p['raw_entries']}'));
+      lignes.add(const Text('\nModule 1 : ingestion', style: gras));
+      lignes.add(Text('Lignes lues : ${pipeline['raw_entries']}'));
 
-      lignes.add(const Text('\nModule 2 : pipeline', style: TextStyle(fontWeight: FontWeight.bold)));
-      lignes.add(Text('Logs valides : ${p['valid_records']}'));
-      lignes.add(Text('Entrées rejetées : ${p['rejected']}'));
-      for (var f in s['by_format'].keys) {
-        lignes.add(Text('Format $f : ${s['by_format'][f]}'));
+      lignes.add(const Text('\nModule 2 : pipeline', style: gras));
+      lignes.add(Text('Logs valides : ${pipeline['valid_records']}'));
+      lignes.add(Text('Entrées rejetées : ${pipeline['rejected']}'));
+      for (var format in stats['by_format'].keys) {
+        lignes.add(Text('Format $format : ${stats['by_format'][format]}'));
       }
 
-      lignes.add(const Text('\nModule 3 : agrégation', style: TextStyle(fontWeight: FontWeight.bold)));
-      lignes.add(Text('IP uniques avec erreurs : ${s['error_ips'].length}'));
-      lignes.add(Text('Union : ${ip['union'].length}'));
-      lignes.add(Text('Intersection : ${ip['intersection'].length}'));
-      lignes.add(Text('Différence : ${ip['active_not_blacklisted'].length}'));
-      lignes.add(Text('Différence symétrique : ${ip['symmetric_difference'].length}'));
-      for (var c in s['by_category'].keys) {
-        lignes.add(Text('Catégorie $c : ${s['by_category'][c]}'));
+      lignes.add(const Text('\nModule 3 : agrégation', style: gras));
+      lignes.add(Text('IP uniques avec erreurs : ${stats['error_ips'].length}'));
+      lignes.add(Text('Union : ${ensembles['union'].length}'));
+      lignes.add(Text('Intersection : ${ensembles['intersection'].length}'));
+      lignes.add(Text('Différence : ${ensembles['active_not_blacklisted'].length}'));
+      lignes.add(Text('Différence symétrique : ${ensembles['symmetric_difference'].length}'));
+      for (var categorie in stats['by_category'].keys) {
+        lignes.add(Text('Catégorie $categorie : ${stats['by_category'][categorie]}'));
       }
-      lignes.add(Text('Attaques force brute : ${bf['alerts'].length}'));
-      lignes.add(Text('Détection complète : ${bf['complete']}'));
+      lignes.add(Text('Attaques force brute : ${forceBrute['alerts'].length}'));
+      lignes.add(Text('Détection complète : ${forceBrute['complete']}'));
 
-      lignes.add(const Text('\nModule 4 : règles et audit', style: TextStyle(fontWeight: FontWeight.bold)));
-      for (var r in regles.keys) {
-        lignes.add(Text('$r : ${regles[r]}'));
+      lignes.add(const Text('\nModule 4 : règles et audit', style: gras));
+      for (var regle in regles.keys) {
+        lignes.add(Text('$regle : ${regles[regle]}'));
       }
       lignes.add(Text('Variables globals() : ${audit!['audit_module_globals'].length}'));
       lignes.add(Text('Variables locals() : ${audit!['audit_function_locals'].length}'));
     }
 
     return Scaffold(
-      // couleur de l'ECE
-      appBar: AppBar(title: const Text('LogStream'), backgroundColor: const Color(0xFF00737A), foregroundColor: Colors.white),
-      body: ListView(padding: const EdgeInsets.all(20), children: lignes),
+      appBar: AppBar(
+        title: const Text('LogStream'),
+        backgroundColor: couleurEce,
+        foregroundColor: Colors.white,
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: lignes,
+      ),
     );
   }
 }

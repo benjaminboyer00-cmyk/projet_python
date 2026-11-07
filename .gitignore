@@ -18,3 +18,8 @@ output/
 .vscode/
 .idea/
 .DS_Store
+
+# Flutter : on garde seulement pubspec.yaml et lib/main.dart
+gui/*
+!gui/pubspec.yaml
+!gui/lib/

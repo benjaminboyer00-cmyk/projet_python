@@ -1,7 +1,0 @@
-# on garde seulement pubspec.yaml et lib/main.dart
-# le reste est genere par "flutter create --platforms=linux ."
-*
-!.gitignore
-!pubspec.yaml
-!lib/
-!lib/main.dart
