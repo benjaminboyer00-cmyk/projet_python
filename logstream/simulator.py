@@ -75,6 +75,8 @@ def _ticks(rng: random.Random, start: datetime,
 def _text_line(ts: datetime, level: str, ip: str, port: int, proto: str,
                user: str | None, payload: str) -> str:
     """Formate une ligne de log au format texte du projet."""
+    # on colle tous les morceaux avec des " | " entre chaque champ
+    # si pas d'utilisateur (None) on met "-" a la place
     return (f"{ts.isoformat()} | {level} | {ip}:{port}/{proto} | "
             f"{user or '-'} | {payload}")
 
@@ -120,17 +122,25 @@ def generate_web_lines(count: int, seed: int = 42) -> Iterator[str]:
 
 def generate_auth_lines(count: int, seed: int = 7) -> Iterator[str]:
     """Logs d'authentification, avec des rafales de force brute."""
+    # random avec graine : memes lignes a chaque fois
     rng = random.Random(seed)
+    # horloge qui avance de 1 a 45 secondes a chaque ligne
     clock = _ticks(rng, START_TIME, 45)
+    # compteur de lignes deja faites
     produced = 0
+
+    # while et pas for car une rafale fait plusieurs lignes d'un coup
     while produced < count:
+        # 1% de chance de mettre une ligne cassee (vide, commentaire...)
         yield from _maybe_noise(rng, 0.01)
         ts = next(clock)
 
+        # 2.5% de chance de faire une attaque
         if rng.random() < 0.025:
             # Rafale de force brute : nombreux échecs très rapprochés.
             ip = rng.choice(ATTACKER_IPS)
-            target = rng.choice(TARGET_ACCOUNTS)
+            target = rng.choice(TARGET_ACCOUNTS)  # admin, root...
+            # entre 6 et 15 echecs, espaces de 1 a 4 secondes
             for _ in range(rng.randint(6, 15)):
                 ts += timedelta(seconds=rng.randint(1, 4))
                 yield _text_line(ts, "WARNING", ip, 22,
@@ -138,18 +148,23 @@ def generate_auth_lines(count: int, seed: int = 7) -> Iterator[str]:
                                      {"event": "login", "status": "failed"}))
                 produced += 1
             if rng.random() < 0.3:  # l'attaquant finit par réussir
+                # en CRITICAL car l'attaquant est rentre
                 yield _text_line(ts, "CRITICAL", ip, 22, "SSH", target,
                                  json.dumps({"event": "login",
                                              "status": "success"}))
                 produced += 1
+            # on passe direct a la ligne suivante
             continue
 
         # Comportement normal : parfois une faute de frappe, puis succès.
         ip, user = rng.choice(NORMAL_IPS), rng.choice(USERS)
+        # 0 echec (80%), 1 echec (15%) ou 2 echecs (5%)
+        # en dessous du seuil de 5 donc pas d'alerte force brute
         for _ in range(rng.choices((0, 1, 2), (80, 15, 5))[0]):
             yield _text_line(ts, "WARNING", ip, 22, "SSH", user, json.dumps(
                 {"event": "login", "status": "failed"}))
             produced += 1
+        # puis il se connecte (70%) ou se deconnecte (30%)
         event = rng.choices(("login", "logout"), (70, 30))[0]
         yield _text_line(ts, "INFO", ip, 22, "SSH", user, json.dumps(
             {"event": event, "status": "success"}))
