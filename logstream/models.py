@@ -1,56 +1,32 @@
 """
-Modèles de données (types) utilisés dans tout le projet.
+Types utilisés dans le projet.
 
-Un enregistrement de log est un **dictionnaire Python** (``LogRecord``,
-un ``TypedDict`` qui n'ajoute que du typage statique : à l'exécution
-c'est un ``dict`` classique).
-
-Les métadonnées fixes de connexion sont représentées par un **tuple**
-immuable ``(IP, Port, Protocole)`` : une fois la ligne lue, ces
-informations ne doivent plus changer, et un tuple est hachable, ce qui
-permet de le stocker dans un ``set``.
+Ce sont de simples alias : ils ne changent rien à l'exécution, mais ils rendent
+les signatures de fonctions plus lisibles et permettent à mypy de vérifier
+le code.
 """
 
-from datetime import datetime
-from typing import Any, Callable, Optional, TypedDict, Union
+from collections.abc import Callable
+from typing import Any
 
-# (adresse IP, port, protocole) - ex: ("192.168.1.10", 443, "TCP")
+# Métadonnées fixes d'une connexion : (IP, port, protocole).
+# On utilise un tuple car ces informations ne doivent plus changer une fois la
+# ligne lue. Un tuple est aussi hachable, on peut donc le mettre dans un set.
 ConnectionMeta = tuple[str, int, str]
 
-# Le payload est soit un JSON décodé (dict), soit une chaîne brute.
-Payload = Union[dict[str, Any], str]
+# Le payload est un dictionnaire si c'était du JSON, sinon une simple chaîne.
+Payload = dict[str, Any] | str
 
-# Une entrée "brute" avant parsing peut avoir trois formats :
-#   - str   : ligne texte
-#   - dict  : objet JSON déjà décodé
-#   - tuple : événement de connexion (horodatage, ip, port, protocole)
-RawEntry = Union[str, dict[str, Any], tuple[Any, ...]]
+# Une entrée brute, avant parsing, peut avoir trois formes :
+#   - str   : ligne de texte ;
+#   - dict  : objet JSON déjà décodé ;
+#   - tuple : connexion (horodatage, ip, port, protocole).
+RawEntry = str | dict[str, Any] | tuple[Any, ...]
 
+# Un log après parsing est un dictionnaire avec les clés : timestamp, level,
+# source, ip, user_id, payload, category, origin_format et message.
+LogRecord = dict[str, Any]
 
-class LogRecord(TypedDict):
-    """Enregistrement de log normalisé."""
-
-    timestamp: datetime
-    level: str
-    source: ConnectionMeta
-    ip: str
-    user_id: Optional[str]
-    payload: Payload
-    category: str
-    origin_format: str
-    message: str
-
-
-class Alert(TypedDict):
-    """Alerte produite par le moteur de règles."""
-
-    rule: str
-    ip: str
-    timestamp: str
-    level: str
-    detail: str
-
-
-# Une règle de sécurité reçoit un enregistrement + une configuration
-# (**kwargs) et renvoie un message d'alerte ou None.
-SecurityRule = Callable[..., Optional[str]]
+# Une règle de sécurité est une fonction qui reçoit un log et des options, et
+# qui renvoie un message d'alerte ou None.
+SecurityRule = Callable[..., str | None]

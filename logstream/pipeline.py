@@ -1,37 +1,17 @@
 """
-Module 2 - Pipeline de transformation & programmation fonctionnelle.
+Module 2 : pipeline de transformation.
 
-Le pipeline est une chaîne d'itérateurs **paresseux** construite avec
-``map()`` et ``filter()`` :
-
-Les étapes, dans l'ordre :
-
-1. ``map(strip)`` nettoie les espaces en début et fin de ligne ;
-2. ``filter(None)`` retire les lignes vides ;
-3. ``filter(lambda)`` retire les commentaires ;
-4. ``map(decode_line)`` transforme chaque ligne en chaîne, dictionnaire
-   ou tuple selon son format ;
-5. ``map(route_entry)`` aiguille chaque entrée avec un match-case et
-   renvoie un ``LogRecord`` ou ``None`` si l'entrée est illisible ;
-6. ``filter(None)`` retire ces entrées illisibles ;
-7. ``filter(is_valid_record)`` applique les prédicats de validation ;
-8. ``map(normalize_record)`` normalise l'enregistrement et construit
-   son message avec une f-string.
-
-Rien n'est calculé lors de la construction : chaque enregistrement
-traverse toute la chaîne au moment où le consommateur le demande. La
-mémoire utilisée reste donc constante quelle que soit la taille des
-données.
+Le pipeline est une chaîne de map() et de filter(). Ces deux fonctions sont
+"paresseuses" : elles ne calculent rien tant qu'on ne leur demande pas
+d'élément. Chaque log traverse donc toute la chaîne, seul, au moment où on le
+lit, et la mémoire utilisée ne dépend pas de la taille des fichiers.
 """
 
 import json
 import logging
 from collections import defaultdict
-from collections.abc import Callable, Iterable, Iterator
-from dataclasses import dataclass, field
-from datetime import datetime
-from functools import reduce
-from typing import Any, TypeVar, cast
+from collections.abc import Iterable, Iterator
+from typing import Any
 
 from logstream.config import ANONYMOUS_USER, COMMENT_PREFIX, VALID_LEVELS
 from logstream.exceptions import LogParseError
@@ -45,95 +25,53 @@ from logstream.parsing import (
 
 logger = logging.getLogger(__name__)
 
-T = TypeVar("T")
 
-
-# --------------------------------------------------------------------------
-# Métriques du pipeline
-# --------------------------------------------------------------------------
-@dataclass
-class PipelineMetrics:
-    """Compteurs mis à jour au fil de l'eau pendant la consommation.
-
-    Comme le pipeline est paresseux, les compteurs ne sont complets
-    qu'une fois l'itérateur entièrement consommé.
-    """
-
-    counters: defaultdict[str, int] = field(
-        default_factory=lambda: defaultdict(int)
-    )
-
-    @property
-    def rejected(self) -> int:
-        """Nombre d'entrées non vides écartées (parsing ou validation)."""
-        return (self.counters["non_empty_entries"]
-                - self.counters["valid_records"])
-
-    def as_dict(self) -> dict[str, int]:
-        """Copie des compteurs sous forme de dictionnaire simple."""
-        return {**self.counters, "rejected": self.rejected}
-
-
-def count_items(iterable: Iterable[T], metrics: PipelineMetrics,
-                key: str) -> Iterator[T]:
+def count_items(items: Iterable[Any], metrics: defaultdict[str, int],
+                key: str) -> Iterator[Any]:
     """Générateur "espion" : compte les éléments sans les modifier."""
-    for item in iterable:
-        metrics.counters[key] += 1
+    for item in items:
+        metrics[key] += 1
         yield item
 
 
-# --------------------------------------------------------------------------
-# Routage par Structural Pattern Matching
-# --------------------------------------------------------------------------
-def route_entry(entry: RawEntry) -> LogRecord | None:
-    """Route une entrée vers le bon parseur selon son format.
+# --- Routage avec match-case -------------------------------------------------
 
-    Le ``match-case`` remplace une cascade de ``if isinstance(...)``
-    et permet en plus de vérifier la *forme* des données (clés d'un
-    dictionnaire, longueur et types d'un tuple).
+def route_entry(entry: Any) -> LogRecord | None:
+    """Envoie une entrée vers le bon parseur selon son format.
 
-    Returns:
-        Le ``LogRecord`` parsé, ou ``None`` si l'entrée est invalide
-        (elle sera ensuite écartée par ``filter(None, ...)``).
+    Renvoie le log parsé, ou None si l'entrée est illisible.
     """
     try:
         match entry:
-            # 1. Chaîne brute
-            case str() as line if line.strip():
-                return parse_text_line(line)
+            # 1. Chaîne brute.
+            case str():
+                return parse_text_line(entry)
 
-            # 2. Dictionnaire d'erreur applicative {'level':..,'code':..}
-            case {"level": str(), "code": int()}:
-                return parse_dict_entry(cast(dict[str, Any], entry))
+            # 2. Dictionnaire : erreur applicative ou log JSON avec une IP.
+            case {"level": str(), "code": int()} | {"level": str(),
+                                                    "ip": str()}:
+                return parse_dict_entry(entry)
 
-            # 2bis. Dictionnaire générique contenant au moins une IP
-            case {"level": str(), "ip": str()}:
-                return parse_dict_entry(cast(dict[str, Any], entry))
+            # 3. Tuple de connexion : 4 éléments dont les types sont vérifiés.
+            case (timestamp, str() as ip, int() as port, str() as protocol):
+                return parse_connection_tuple(timestamp, ip, port, protocol)
 
-            # 3. Tuple de connexion horodaté (ts, ip, port, protocole)
-            case ((str() | datetime()) as ts, str() as ip,
-                  int() as port, str() as proto):
-                return parse_connection_tuple(ts, ip, port, proto)
-
-            # 3bis. Tuple de métadonnées seul (ip, port, protocole)
-            case (str() as ip, int() as port, str() as proto):
-                return parse_connection_tuple(datetime.now(), ip, port,
-                                              proto)
-
+            # Tout le reste est un format inconnu.
             case _:
-                logger.debug("Format non reconnu : %r", entry)
                 return None
-    except LogParseError as exc:
-        logger.debug("Entrée rejetée : %s", exc)
+    except LogParseError as error:
+        # On ne veut pas planter sur une mauvaise ligne : on renvoie None et
+        # filter(None, ...) la retirera du flux.
+        logger.debug("Entrée rejetée : %s", error)
         return None
 
 
-# --------------------------------------------------------------------------
-# Filtrage
-# --------------------------------------------------------------------------
-# Prédicats de validation : des fonctions anonymes stockées dans un
-# tuple (les fonctions sont des objets de première classe).
-VALIDATORS: tuple[Callable[[LogRecord], bool], ...] = (
+# --- Filtrage ----------------------------------------------------------------
+
+# Conditions qu'un log doit respecter. Des fonctions peuvent être rangées dans
+# un tuple comme n'importe quelle valeur : ce sont des objets "de première
+# classe".
+VALIDATORS = (
     lambda record: record["level"].strip().upper() in VALID_LEVELS,
     lambda record: not record["ip"].startswith("0."),
     lambda record: record["timestamp"].year >= 2000,
@@ -141,7 +79,7 @@ VALIDATORS: tuple[Callable[[LogRecord], bool], ...] = (
 
 
 def is_valid_record(record: LogRecord) -> bool:
-    """Vrai si l'enregistrement satisfait tous les prédicats."""
+    """Vrai si le log respecte toutes les conditions de VALIDATORS."""
     return all(map(lambda check: check(record), VALIDATORS))
 
 
@@ -150,16 +88,15 @@ def is_comment(entry: RawEntry) -> bool:
     return isinstance(entry, str) and entry.startswith(COMMENT_PREFIX)
 
 
-# --------------------------------------------------------------------------
-# Normalisation
-# --------------------------------------------------------------------------
+# --- Normalisation -----------------------------------------------------------
+
 def clean_text(text: str) -> str:
-    """Supprime les espaces superflus (début, fin et multiples)."""
+    """Enlève les espaces en trop (début, fin et espaces multiples)."""
     return " ".join(text.split())
 
 
 def clean_payload(payload: Payload) -> Payload:
-    """Nettoie le payload : clés en minuscules, chaînes nettoyées."""
+    """Nettoie le payload : clés en minuscules et textes sans espaces."""
     if isinstance(payload, str):
         return clean_text(payload)
     return {
@@ -170,7 +107,7 @@ def clean_payload(payload: Payload) -> Payload:
 
 
 def summarize_payload(payload: Payload) -> str:
-    """Résumé lisible du payload (utilisé dans le message final)."""
+    """Construit un résumé lisible du payload selon sa forme."""
     match payload:
         case {"method": method, "path": path, "status": status}:
             return f"{method} {path} (statut {status})"
@@ -187,89 +124,79 @@ def summarize_payload(payload: Payload) -> str:
 
 
 def normalize_record(record: LogRecord) -> LogRecord:
-    """Normalise un enregistrement (sans modifier l'original).
+    """Met un log au format standard et construit son message.
 
-    * niveau et protocole en MAJUSCULES ;
-    * identifiant utilisateur en minuscules ;
-    * payload nettoyé ;
-    * construction d'un message formaté par f-string.
+    Renvoie un nouveau dictionnaire : le log d'origine n'est pas modifié.
     """
     level = record["level"].strip().upper()
-    ip, port, protocol = record["source"]
-    source = (ip, port, protocol.strip().upper())
+    ip, port, protocol = record["source"]  # décomposition du tuple
+    protocol = protocol.strip().upper()
     user_id = record["user_id"].strip().lower() if record["user_id"] else None
     payload = clean_payload(record["payload"])
 
+    # Dans une f-string, ":<8" aligne à gauche sur 8 caractères et ":>15"
+    # aligne à droite sur 15. Les colonnes restent ainsi bien alignées.
     message = (
         f"[{record['timestamp']:%Y-%m-%d %H:%M:%S}] {level:<8} "
-        f"{ip:>15}:{port:<5} {source[2]:<5} "
+        f"{ip:>15}:{port:<5} {protocol:<5} "
         f"user={user_id or ANONYMOUS_USER:<10} "
         f"{record['category']:<7} {summarize_payload(payload)}"
     )
+    # {**record, ...} copie le log puis remplace les champs indiqués.
     return {
         **record,
         "level": level,
-        "source": source,
+        "source": (ip, port, protocol),
         "user_id": user_id,
         "payload": payload,
         "message": message,
     }
 
 
-# --------------------------------------------------------------------------
-# Assemblage du pipeline
-# --------------------------------------------------------------------------
+# --- Assemblage du pipeline --------------------------------------------------
+
 def strip_entry(entry: RawEntry) -> RawEntry:
-    """Nettoie les entrées texte, laisse les autres formats intacts."""
+    """Enlève les espaces autour d'un texte, ne touche pas au reste."""
     return entry.strip() if isinstance(entry, str) else entry
 
 
 def decode_entry(entry: RawEntry) -> RawEntry:
-    """Décode les lignes texte (JSON / CONN), laisse le reste intact."""
+    """Décode les lignes de texte, ne touche pas aux autres formats."""
     return decode_line(entry) if isinstance(entry, str) else entry
 
 
 def build_pipeline(
     entries: Iterable[RawEntry],
-    metrics: PipelineMetrics | None = None,
+    metrics: defaultdict[str, int] | None = None,
 ) -> Iterator[LogRecord]:
-    """Construit la chaîne paresseuse de transformations.
+    """Construit la chaîne de traitements et renvoie les logs propres.
 
-    Args:
-        entries: itérable d'entrées brutes (lignes, dict, tuples).
-        metrics: objet de métriques à alimenter (optionnel).
-
-    Returns:
-        Un itérateur de ``LogRecord`` valides et normalisés.
+    metrics est un compteur optionnel, rempli au fur et à mesure de la lecture.
+    Ses valeurs ne sont donc complètes qu'à la fin du parcours.
     """
-    metrics = metrics if metrics is not None else PipelineMetrics()
+    # "is None" et pas "not metrics" : un compteur vide vaut False, et on
+    # perdrait alors celui passé par l'appelant.
+    if metrics is None:
+        metrics = defaultdict(int)
 
-    counted = count_items(entries, metrics, "raw_entries")
-    non_empty: Iterator[RawEntry] = filter(None, map(strip_entry, counted))
-    no_comment: Iterator[RawEntry] = filter(
-        lambda entry: not is_comment(entry), non_empty
-    )
-    decoded = map(decode_entry,
-                  count_items(no_comment, metrics, "non_empty_entries"))
-    routed = filter(None, map(route_entry, decoded))
-    parsed = count_items(routed, metrics, "parsed_records")
+    # Aucune ligne n'est lue ici : on ne fait que brancher les étapes.
+    # Étape 1 : on compte les entrées brutes et on enlève les espaces.
+    raw = count_items(entries, metrics, "raw_entries")
+    stripped = map(strip_entry, raw)
+
+    # Étape 2 : filter(None, ...) retire tout ce qui est vide, puis on
+    # retire les commentaires avec un filter et une lambda.
+    non_empty: Iterator[RawEntry] = filter(None, stripped)
+    no_comment = filter(lambda entry: not is_comment(entry), non_empty)
+    kept = count_items(no_comment, metrics, "non_empty_entries")
+
+    # Étape 3 : chaque ligne devient une chaîne, un dict ou un tuple, puis
+    # le match-case choisit le parseur. Les entrées illisibles donnent None.
+    decoded = map(decode_entry, kept)
+    routed = map(route_entry, decoded)
+    parsed = count_items(filter(None, routed), metrics, "parsed_records")
+
+    # Étape 4 : on garde les logs valides et on les normalise.
     valid = filter(is_valid_record, parsed)
     normalized = map(normalize_record, valid)
     return count_items(normalized, metrics, "valid_records")
-
-
-def chain_transforms(
-    records: Iterable[Any], *transforms: Callable[[Iterable[Any]], Any]
-) -> Any:
-    """Applique une suite de transformations d'itérables (composition).
-
-    Exemple::
-
-        chain_transforms(records,
-                         lambda it: filter(lambda r: r["ip"], it),
-                         lambda it: map(lambda r: r["level"], it))
-
-    ``functools.reduce`` passe le résultat de chaque transformation à la
-    suivante : les fonctions sont manipulées comme des données.
-    """
-    return reduce(lambda acc, transform: transform(acc), transforms, records)

@@ -1,4 +1,8 @@
-"""Fixtures partagées par les tests."""
+"""Fonctions et fixtures communes à tous les tests.
+
+pytest charge ce fichier automatiquement. Une fixture est une fonction qui
+prépare ce dont un test a besoin : il suffit de la mettre en paramètre du test.
+"""
 
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -9,14 +13,14 @@ import pytest
 from logstream.models import LogRecord
 from logstream.parsing import build_record
 
-BASE_TIME = datetime(2026, 10, 20, 12, 0, 0)
+BASE_TIME = datetime(2026, 10, 20, 12, 0, 0)  # midi
 
 
 def make_record(ip: str = "10.0.0.5", level: str = "INFO",
                 payload: Any = "message", port: int = 22,
                 protocol: str = "SSH", user: str | None = "alice",
                 seconds: int = 0) -> LogRecord:
-    """Construit un LogRecord minimal pour les tests."""
+    """Crée un log de test : on ne précise que ce qui compte pour le test."""
     return build_record(
         timestamp=BASE_TIME + timedelta(seconds=seconds),
         level=level,
@@ -29,14 +33,17 @@ def make_record(ip: str = "10.0.0.5", level: str = "INFO",
 
 def login(ip: str, status: str, seconds: int,
           user: str = "root") -> LogRecord:
-    """Enregistrement de tentative de connexion."""
+    """Crée un log de tentative de connexion."""
     return make_record(ip=ip, level="WARNING", user=user, seconds=seconds,
                        payload={"event": "login", "status": status})
 
 
 @pytest.fixture
 def sample_log_file(tmp_path: Path) -> Path:
-    """Petit fichier de logs mêlant les trois formats et du bruit."""
+    """Petit fichier mélangeant les trois formats et des lignes abîmées.
+
+    tmp_path est un dossier temporaire fourni par pytest.
+    """
     content = "\n".join([
         "2026-10-20T08:00:00 | INFO | 10.0.0.2:5000/TCP | bob | "
         '{"method": "GET", "path": "/", "status": 200}',

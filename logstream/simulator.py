@@ -1,14 +1,14 @@
 """
-Génération de données de test (fichiers de logs et flux simulé).
+Génération des données de test.
 
-Tous les générateurs utilisent ``yield`` : on peut produire un fichier
-de plusieurs millions de lignes en n'ayant qu'une seule ligne en
-mémoire à la fois. Un ``random.Random(seed)`` dédié rend le jeu de
-données reproductible.
+Tout est écrit avec des générateurs : on peut créer un fichier de plusieurs
+millions de lignes en n'ayant qu'une seule ligne en mémoire à la fois.
 
-Le jeu de données contient volontairement des anomalies (lignes vides,
-commentaires, lignes corrompues, IP invalides, niveaux inconnus) afin
-de tester le filtrage du pipeline.
+Chaque générateur utilise son propre random.Random(seed). Avec la même graine,
+on obtient toujours exactement les mêmes fichiers.
+
+Le jeu de données contient volontairement des lignes abîmées (vides, JSON
+cassé, IP invalides...) pour tester le filtrage du pipeline.
 """
 
 import json
@@ -19,29 +19,30 @@ from pathlib import Path
 
 from logstream.models import RawEntry
 
-START_TIME = datetime(2026, 10, 20, 6, 0, 0)
+START_TIME = datetime(2026, 10, 20, 6, 0, 0)  # date de la première ligne
 
-NORMAL_IPS: tuple[str, ...] = tuple(
+# --- Valeurs possibles pour les lignes générées ---
+NORMAL_IPS = tuple(
     [f"192.168.1.{i}" for i in range(10, 40)]
     + [f"10.0.0.{i}" for i in range(2, 12)]
 )
-ATTACKER_IPS: tuple[str, ...] = (
+ATTACKER_IPS = (
     "203.0.113.66", "203.0.113.7", "198.51.100.23", "198.51.100.99",
     "185.220.101.4",
 )
-USERS: tuple[str, ...] = tuple(f"user{i:03d}" for i in range(1, 31))
-TARGET_ACCOUNTS: tuple[str, ...] = ("admin", "root", "user001", "backup")
+USERS = tuple(f"user{i:03d}" for i in range(1, 31))  # user001 à user030
+TARGET_ACCOUNTS = ("admin", "root", "user001", "backup")  # comptes attaqués
 
-HTTP_PATHS: tuple[str, ...] = (
+HTTP_PATHS = (
     "/", "/index.html", "/login", "/api/orders", "/api/users",
     "/static/app.js", "/dashboard", "/search",
 )
-MALICIOUS_PATHS: tuple[str, ...] = (
+MALICIOUS_PATHS = (
     "/search?q=' OR 1=1 --", "/../../etc/passwd",
     "/comment?text=<script>alert(1)</script>",
     "/api/users?id=1 UNION SELECT password FROM users",
 )
-SYSTEM_MESSAGES: tuple[tuple[str, str], ...] = (
+SYSTEM_MESSAGES = (
     ("INFO", "Service nginx redémarré"),
     ("INFO", "Sauvegarde quotidienne terminée"),
     ("WARNING", "Utilisation mémoire à 85%"),
@@ -49,9 +50,11 @@ SYSTEM_MESSAGES: tuple[tuple[str, str], ...] = (
     ("ERROR", "Connexion à la base de données perdue"),
     ("CRITICAL", "Espace disque critique sur /var (98%)"),
 )
-NETWORK_PORTS: tuple[int, ...] = (22, 80, 443, 443, 443, 8080, 3306)
-SUSPICIOUS_TARGET_PORTS: tuple[int, ...] = (23, 445, 3389, 4444)
-NOISE_LINES: tuple[str, ...] = (
+NETWORK_PORTS = (22, 80, 443, 443, 443, 8080, 3306)  # 443 plus fréquent
+SUSPICIOUS_TARGET_PORTS = (23, 445, 3389, 4444)
+
+# Lignes parasites que le pipeline doit savoir écarter.
+NOISE_LINES = (
     "",
     "   ",
     "# rotation du fichier de logs",
@@ -63,44 +66,45 @@ NOISE_LINES: tuple[str, ...] = (
 )
 
 
-def _ticks(rng: random.Random, start: datetime,
-           max_step: int) -> Iterator[datetime]:
-    """Générateur infini d'horodatages croissants."""
+# --- Fonctions utilitaires ---------------------------------------------------
+
+def ticks(rng: random.Random, start: datetime,
+          max_step: int) -> Iterator[datetime]:
+    """Générateur infini de dates croissantes."""
     current = start
     while True:
         current += timedelta(seconds=rng.randint(1, max_step))
         yield current
 
 
-def _text_line(ts: datetime, level: str, ip: str, port: int, proto: str,
-               user: str | None, payload: str) -> str:
+def text_line(ts: datetime, level: str, ip: str, port: int, proto: str,
+              user: str | None, payload: str) -> str:
     """Formate une ligne de log au format texte du projet."""
-    # on colle tous les morceaux avec des " | " entre chaque champ
-    # si pas d'utilisateur (None) on met "-" a la place
     return (f"{ts.isoformat()} | {level} | {ip}:{port}/{proto} | "
             f"{user or '-'} | {payload}")
 
 
-def _maybe_noise(rng: random.Random, rate: float) -> Iterator[str]:
-    """Produit de temps en temps une ligne parasite."""
+def maybe_noise(rng: random.Random, rate: float) -> Iterator[str]:
+    """Produit une ligne parasite avec la probabilité rate."""
     if rng.random() < rate:
         yield rng.choice(NOISE_LINES)
 
 
+# --- Générateurs des trois fichiers de logs ----------------------------------
+
 def generate_web_lines(count: int, seed: int = 42) -> Iterator[str]:
-    """Logs d'un serveur web : requêtes HTTP + erreurs applicatives."""
+    """Logs d'un serveur web : requêtes HTTP et erreurs applicatives."""
     rng = random.Random(seed)
-    clock = _ticks(rng, START_TIME, 20)
+    clock = ticks(rng, START_TIME, 20)  # la date avance de 1 à 20 s
     for _ in range(count):
-        yield from _maybe_noise(rng, 0.02)
+        yield from maybe_noise(rng, 0.02)
         ts = next(clock)
-        attacker = rng.random() < 0.06
+        attacker = rng.random() < 0.06  # 6 % des requêtes sont malveillantes
         ip = rng.choice(ATTACKER_IPS if attacker else NORMAL_IPS)
         user = None if attacker else rng.choice(USERS + (None,))
 
         if rng.random() < 0.12:
-            # Erreur applicative au format JSON (dictionnaire), provoquée
-            # par un sous-ensemble de clients (IP "à problème").
+            # Erreur applicative au format JSON, venant de quelques clients.
             ip = rng.choice(ATTACKER_IPS + NORMAL_IPS[:8])
             code = rng.choice((500, 502, 503, 504))
             yield json.dumps({
@@ -110,78 +114,69 @@ def generate_web_lines(count: int, seed: int = 42) -> Iterator[str]:
             })
             continue
 
+        # Un attaquant visite une URL malveillante une fois sur deux.
         path = rng.choice(MALICIOUS_PATHS if attacker and rng.random() < .5
                           else HTTP_PATHS)
         status = rng.choices((200, 301, 404, 403), (85, 5, 7, 3))[0]
         level = "INFO" if status < 400 else "WARNING"
         payload = json.dumps({"method": rng.choice(("GET", "POST")),
                               "path": path, "status": status})
-        yield _text_line(ts, level, ip, rng.choice((80, 443)), "TCP",
-                         user, payload)
+        yield text_line(ts, level, ip, rng.choice((80, 443)), "TCP",
+                        user, payload)
 
 
 def generate_auth_lines(count: int, seed: int = 7) -> Iterator[str]:
     """Logs d'authentification, avec des rafales de force brute."""
-    # random avec graine : memes lignes a chaque fois
     rng = random.Random(seed)
-    # horloge qui avance de 1 a 45 secondes a chaque ligne
-    clock = _ticks(rng, START_TIME, 45)
-    # compteur de lignes deja faites
+    clock = ticks(rng, START_TIME, 45)
     produced = 0
 
-    # while et pas for car une rafale fait plusieurs lignes d'un coup
+    # while et pas for : une rafale produit plusieurs lignes d'un coup.
     while produced < count:
-        # 1% de chance de mettre une ligne cassee (vide, commentaire...)
-        yield from _maybe_noise(rng, 0.01)
+        yield from maybe_noise(rng, 0.01)
         ts = next(clock)
 
-        # 2.5% de chance de faire une attaque
+        # 2,5 % de chances de lancer une attaque.
         if rng.random() < 0.025:
-            # Rafale de force brute : nombreux échecs très rapprochés.
+            # Rafale : 6 à 15 échecs espacés de 1 à 4 secondes.
             ip = rng.choice(ATTACKER_IPS)
-            target = rng.choice(TARGET_ACCOUNTS)  # admin, root...
-            # entre 6 et 15 echecs, espaces de 1 a 4 secondes
+            target = rng.choice(TARGET_ACCOUNTS)
             for _ in range(rng.randint(6, 15)):
                 ts += timedelta(seconds=rng.randint(1, 4))
-                yield _text_line(ts, "WARNING", ip, 22,
-                                 "SSH", target, json.dumps(
-                                     {"event": "login", "status": "failed"}))
+                yield text_line(ts, "WARNING", ip, 22,
+                                "SSH", target, json.dumps(
+                                    {"event": "login", "status": "failed"}))
                 produced += 1
-            if rng.random() < 0.3:  # l'attaquant finit par réussir
-                # en CRITICAL car l'attaquant est rentre
-                yield _text_line(ts, "CRITICAL", ip, 22, "SSH", target,
-                                 json.dumps({"event": "login",
-                                             "status": "success"}))
+            if rng.random() < 0.3:  # l'attaquant réussit dans 30 % des cas
+                yield text_line(ts, "CRITICAL", ip, 22, "SSH", target,
+                                json.dumps({"event": "login",
+                                            "status": "success"}))
                 produced += 1
-            # on passe direct a la ligne suivante
             continue
 
-        # Comportement normal : parfois une faute de frappe, puis succès.
+        # Utilisateur normal : parfois une erreur de mot de passe, puis une
+        # réussite. Avec au plus 2 échecs, on reste sous le seuil d'alerte.
         ip, user = rng.choice(NORMAL_IPS), rng.choice(USERS)
-        # 0 echec (80%), 1 echec (15%) ou 2 echecs (5%)
-        # en dessous du seuil de 5 donc pas d'alerte force brute
         for _ in range(rng.choices((0, 1, 2), (80, 15, 5))[0]):
-            yield _text_line(ts, "WARNING", ip, 22, "SSH", user, json.dumps(
+            yield text_line(ts, "WARNING", ip, 22, "SSH", user, json.dumps(
                 {"event": "login", "status": "failed"}))
             produced += 1
-        # puis il se connecte (70%) ou se deconnecte (30%)
         event = rng.choices(("login", "logout"), (70, 30))[0]
-        yield _text_line(ts, "INFO", ip, 22, "SSH", user, json.dumps(
+        yield text_line(ts, "INFO", ip, 22, "SSH", user, json.dumps(
             {"event": event, "status": "success"}))
         produced += 1
 
 
 def generate_firewall_lines(count: int, seed: int = 99) -> Iterator[str]:
-    """Logs pare-feu : événements de connexion + messages système."""
+    """Logs du pare-feu : connexions et messages système."""
     rng = random.Random(seed)
-    clock = _ticks(rng, START_TIME, 30)
+    clock = ticks(rng, START_TIME, 30)
     for _ in range(count):
-        yield from _maybe_noise(rng, 0.02)
+        yield from maybe_noise(rng, 0.02)
         ts = next(clock)
         if rng.random() < 0.15:
             level, text = rng.choice(SYSTEM_MESSAGES)
-            yield _text_line(ts, level, "10.0.0.1", 0, "UDP", "system",
-                             text)
+            yield text_line(ts, level, "10.0.0.1", 0, "UDP", "system", text)
             continue
         if rng.random() < 0.08:
             ip = rng.choice(ATTACKER_IPS)
@@ -192,23 +187,21 @@ def generate_firewall_lines(count: int, seed: int = 99) -> Iterator[str]:
 
 
 def simulate_stream(count: int, seed: int = 2026) -> Iterator[RawEntry]:
-    """Flux "temps réel" simulé produisant des objets hétérogènes.
+    """Flux simulé mélangeant les trois formats : str, dict et tuple.
 
-    Contrairement aux fichiers, ce flux produit directement des objets
-    Python de trois formats : ``str``, ``dict`` et ``tuple``. Il sert à
-    démontrer le routage ``match-case`` du pipeline.
+    Il sert à montrer le routage du pipeline sur des objets Python.
     """
     rng = random.Random(seed)
-    clock = _ticks(rng, START_TIME, 10)
+    clock = ticks(rng, START_TIME, 10)
     for _ in range(count):
         ts = next(clock)
         ip = rng.choice(NORMAL_IPS + ATTACKER_IPS)
-        match rng.randint(1, 3):
+        match rng.randint(1, 3):  # on tire le format au hasard
             case 1:
-                yield _text_line(ts, rng.choice(("INFO", "WARNING")), ip,
-                                 22, "SSH", rng.choice(USERS), json.dumps(
-                                     {"event": "login", "status": rng.choice(
-                                         ("success", "failed"))}))
+                yield text_line(ts, rng.choice(("INFO", "WARNING")), ip,
+                                22, "SSH", rng.choice(USERS), json.dumps(
+                                    {"event": "login", "status": rng.choice(
+                                        ("success", "failed"))}))
             case 2:
                 yield {"timestamp": ts.isoformat(), "level": "ERROR",
                        "code": rng.choice((500, 503)), "ip": ip,
@@ -218,23 +211,21 @@ def simulate_stream(count: int, seed: int = 2026) -> Iterator[RawEntry]:
                                           + SUSPICIOUS_TARGET_PORTS), "TCP")
 
 
+# --- Écriture des fichiers ---------------------------------------------------
+
 def write_lines(path: Path, lines: Iterator[str]) -> int:
-    """Écrit un générateur de lignes dans un fichier, ligne par ligne."""
+    """Écrit les lignes une par une et renvoie leur nombre."""
     written = 0
-    with path.open("w", encoding="utf-8") as handle:
+    with path.open("w", encoding="utf-8") as file:
         for line in lines:
-            handle.write(line + "\n")
+            file.write(line + "\n")
             written += 1
     return written
 
 
 def write_dataset(directory: Path, lines_per_file: int = 5000,
                   seed: int = 42) -> dict[str, int]:
-    """Génère le jeu de données complet dans ``directory``.
-
-    Returns:
-        Le nombre de lignes écrites par fichier.
-    """
+    """Crée tout le jeu de test et renvoie le nombre de lignes par fichier."""
     directory.mkdir(parents=True, exist_ok=True)
     generators = {
         "web_server.log": generate_web_lines(lines_per_file, seed),

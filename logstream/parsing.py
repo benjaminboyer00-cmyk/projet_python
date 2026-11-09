@@ -1,25 +1,15 @@
 """
-Module 1 - Parsing & modélisation des données.
+Module 1 : transformation de chaque entrée en dictionnaire typé.
 
-Transforme chaque entrée brute en un dictionnaire ``LogRecord`` typé :
+Le programme accepte trois formats :
 
-* l'horodatage devient un ``datetime`` ;
-* le niveau reste une ``str`` (INFO, WARNING, ERROR, CRITICAL) ;
-* la source devient un ``tuple`` immuable ``(IP, Port, Protocole)`` ;
-* l'utilisateur est une ``str`` ou ``None`` ;
-* le payload est un ``dict`` (JSON décodé) ou une ``str`` (chaîne brute).
+1. ligne texte :
+   2026-10-20T08:15:32 | INFO | 10.0.0.4:51234/TCP | user012 | {"a": 1}
+2. objet JSON : {"timestamp": "...", "level": "ERROR", "ip": "..."}
+3. connexion du pare-feu : CONN 2026-10-20T08:00:10 203.0.113.66 23 TCP
 
-Trois formats d'entrée sont supportés :
-
-1. Ligne texte ::
-
-    2026-10-20T08:15:32 | INFO | 10.0.0.4:51234/TCP | user012 | {"a": 1}
-
-2. Objet JSON (une ligne ``{...}`` du fichier, ou un ``dict`` en mémoire)
-3. Événement de connexion ``CONN <horodatage> <ip> <port> <protocole>``,
-   converti en tuple ``(horodatage, ip, port, protocole)``.
-
-Toute erreur de format lève ``LogParseError``.
+Dès qu'un champ est incorrect, on lève une LogParseError. Elle est rattrapée
+dans le pipeline, qui écarte alors la ligne sans arrêter le programme.
 """
 
 import ipaddress
@@ -27,67 +17,56 @@ import json
 from datetime import datetime
 from typing import Any
 
-from logstream.config import (
-    CONNECTION_PREFIX,
-    FIELD_COUNT,
-    FIELD_SEPARATOR,
-)
+from logstream.config import FIELD_COUNT, FIELD_SEPARATOR
 from logstream.exceptions import LogParseError
 from logstream.models import ConnectionMeta, LogRecord, Payload, RawEntry
 
-# Clés "structurelles" d'une entrée JSON (le reste constitue le payload).
-_DICT_BASE_KEYS: frozenset[str] = frozenset(
-    {"timestamp", "level", "ip", "port", "protocol", "user"}
-)
+# Clés d'un log JSON qui ont un rôle précis. Toutes les autres clés (code,
+# message...) sont rangées dans le payload.
+BASE_KEYS = frozenset({"timestamp", "level", "ip", "port", "protocol", "user"})
 
 
-# --------------------------------------------------------------------------
-# Parsing des champs élémentaires
-# --------------------------------------------------------------------------
+# --- Lecture de chaque champ -------------------------------------------------
+
 def parse_timestamp(value: Any) -> datetime:
-    """Convertit une valeur ISO 8601 (ou un datetime) en ``datetime``."""
-    if isinstance(value, datetime):
-        return value
+    """Convertit une date au format ISO 8601 en objet datetime."""
     try:
         return datetime.fromisoformat(str(value).strip())
-    except ValueError as exc:
-        raise LogParseError("Horodatage invalide", value) from exc
+    except ValueError as error:
+        raise LogParseError(f"Horodatage invalide : {value}") from error
 
 
 def parse_ip(value: Any) -> str:
-    """Valide une adresse IPv4/IPv6 avec le module standard ``ipaddress``."""
+    """Vérifie qu'une adresse IP est valide (IPv4 ou IPv6)."""
     try:
         return str(ipaddress.ip_address(str(value).strip()))
-    except ValueError as exc:
-        raise LogParseError("Adresse IP invalide", value) from exc
+    except ValueError as error:
+        raise LogParseError(f"Adresse IP invalide : {value}") from error
 
 
 def parse_port(value: Any) -> int:
     """Convertit un port en entier compris entre 0 et 65535."""
     try:
         port = int(value)
-    except (TypeError, ValueError) as exc:
-        raise LogParseError("Port non numérique", value) from exc
+    except (TypeError, ValueError) as error:
+        raise LogParseError(f"Port non numérique : {value}") from error
     if not 0 <= port <= 65535:
-        raise LogParseError("Port hors limites", value)
+        raise LogParseError(f"Port hors limites : {value}")
     return port
 
 
 def parse_source(value: str) -> ConnectionMeta:
-    """Découpe ``ip:port/protocole`` en tuple ``(ip, port, protocole)``.
-
-    ``rpartition(':')`` est utilisé pour l'IP afin de rester compatible
-    avec les adresses IPv6 qui contiennent elles-mêmes des ``:``.
-    """
+    """Découpe "ip:port/protocole" en tuple (ip, port, protocole)."""
     address, slash, protocol = value.strip().partition("/")
+    # rpartition coupe au dernier ":" car une adresse IPv6 en contient déjà.
     ip, colon, port = address.rpartition(":")
     if not slash or not colon or not protocol:
-        raise LogParseError("Source mal formée (ip:port/proto)", value)
+        raise LogParseError(f"Source mal formée : {value}")
     return (parse_ip(ip), parse_port(port), protocol.strip())
 
 
 def parse_user(value: Any) -> str | None:
-    """Renvoie l'identifiant utilisateur, ou ``None`` s'il est absent."""
+    """Renvoie l'utilisateur, ou None s'il est absent ("-" ou vide)."""
     if value is None:
         return None
     text = str(value).strip()
@@ -95,19 +74,20 @@ def parse_user(value: Any) -> str | None:
 
 
 def parse_payload(text: str) -> Payload:
-    """Décode le payload JSON ; à défaut, conserve la chaîne brute."""
+    """Décode le texte en dictionnaire si c'est du JSON, sinon le garde."""
     text = text.strip()
-    if not text.startswith("{"):
-        return text
-    try:
-        decoded = json.loads(text)
-    except json.JSONDecodeError:
-        return text
-    return decoded if isinstance(decoded, dict) else text
+    if text.startswith("{"):
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass  # JSON cassé : on garde simplement le texte
+    return text
 
 
 def categorize(payload: Payload) -> str:
-    """Détermine la catégorie d'un log à partir de son payload."""
+    """Donne la catégorie d'un log d'après la forme de son payload."""
+    # Un motif de dictionnaire est valide si les clés indiquées existent.
+    # Le "|" veut dire "ou" et str() ou int() vérifient le type de la valeur.
     match payload:
         case {"event": "login" | "logout"}:
             return "AUTH"
@@ -117,42 +97,25 @@ def categorize(payload: Payload) -> str:
             return "NETWORK"
         case str():
             return "SYSTEM"
-        case _:
+        case _:  # "_" attrape tous les autres cas
             return "OTHER"
 
 
-# --------------------------------------------------------------------------
-# Décodage d'une ligne texte vers son format (str / dict / tuple)
-# --------------------------------------------------------------------------
+# --- Reconnaissance du format d'une ligne ------------------------------------
+
 def decode_line(line: str) -> RawEntry:
-    """Identifie le format d'une ligne texte et la convertit.
-
-    * une ligne ``{...}`` donne un ``dict`` (JSON) ;
-    * une ligne ``CONN ts ip port proto`` donne un ``tuple`` ;
-    * toute autre ligne est renvoyée telle quelle (``str``).
-
-    Returns:
-        L'entrée décodée, prête à être routée par le pipeline.
-    """
-    stripped = line.strip()
-    match stripped.split():
-        case [prefix, timestamp, ip, port, protocol] if (
-            prefix == CONNECTION_PREFIX and port.isdigit()
-        ):
+    """Convertit une ligne en tuple (CONN), en dict (JSON) ou la laisse."""
+    match line.split():
+        # La ligne découpée doit avoir 5 mots et commencer par CONN. Le "if"
+        # après le motif est une condition supplémentaire appelée "garde".
+        case ["CONN", timestamp, ip, port, protocol] if port.isdigit():
             return (timestamp, ip, int(port), protocol)
-        case [first, *_] if first.startswith("{"):
-            try:
-                decoded = json.loads(stripped)
-            except json.JSONDecodeError:
-                return stripped
-            return decoded if isinstance(decoded, dict) else stripped
         case _:
-            return stripped
+            return parse_payload(line)
 
 
-# --------------------------------------------------------------------------
-# Construction des enregistrements
-# --------------------------------------------------------------------------
+# --- Construction du dictionnaire final --------------------------------------
+
 def build_record(
     timestamp: datetime,
     level: str,
@@ -161,27 +124,27 @@ def build_record(
     payload: Payload,
     origin_format: str,
 ) -> LogRecord:
-    """Assemble le dictionnaire ``LogRecord`` final."""
+    """Assemble le dictionnaire commun à tous les formats."""
     return {
         "timestamp": timestamp,
         "level": level,
         "source": source,
-        "ip": source[0],
+        "ip": source[0],  # copie de l'IP pour y accéder plus facilement
         "user_id": user_id,
         "payload": payload,
         "category": categorize(payload),
-        "origin_format": origin_format,
-        "message": "",  # rempli lors de la normalisation (Module 2)
+        "origin_format": origin_format,  # raw, dict ou tuple
+        "message": "",  # rempli plus tard par normalize_record (module 2)
     }
 
 
 def parse_text_line(line: str) -> LogRecord:
-    """Parse une ligne texte ``ts | niveau | source | user | payload``."""
+    """Parse une ligne "date | niveau | source | utilisateur | payload"."""
+    # maxsplit évite de couper le payload s'il contient lui-même " | ".
     parts = line.split(FIELD_SEPARATOR, maxsplit=FIELD_COUNT - 1)
     if len(parts) != FIELD_COUNT:
-        raise LogParseError(
-            f"{len(parts)} champ(s) au lieu de {FIELD_COUNT}", line
-        )
+        raise LogParseError(f"Mauvais nombre de champs : {line}")
+
     timestamp, level, source, user, payload = parts
     return build_record(
         timestamp=parse_timestamp(timestamp),
@@ -194,11 +157,10 @@ def parse_text_line(line: str) -> LogRecord:
 
 
 def parse_dict_entry(entry: dict[str, Any]) -> LogRecord:
-    """Parse un objet JSON (dict) en ``LogRecord``.
-
-    Les clés non structurelles (code, message...) forment le payload.
-    """
+    """Parse un log JSON déjà décodé en dictionnaire."""
     try:
+        # .get() donne une valeur par défaut si le port ou le protocole
+        # manque. L'IP, la date et le niveau, eux, sont obligatoires.
         source = (
             parse_ip(entry["ip"]),
             parse_port(entry.get("port", 0)),
@@ -206,11 +168,12 @@ def parse_dict_entry(entry: dict[str, Any]) -> LogRecord:
         )
         timestamp = parse_timestamp(entry["timestamp"])
         level = str(entry["level"])
-    except KeyError as exc:
-        raise LogParseError(f"Clé manquante : {exc}", entry) from exc
+    except KeyError as error:
+        raise LogParseError(f"Clé manquante : {error}") from error
 
+    # Compréhension de dictionnaire : le payload contient les autres clés.
     payload = {key: value for key, value in entry.items()
-               if key not in _DICT_BASE_KEYS}
+               if key not in BASE_KEYS}
     return build_record(
         timestamp=timestamp,
         level=level,
@@ -224,11 +187,11 @@ def parse_dict_entry(entry: dict[str, Any]) -> LogRecord:
 def parse_connection_tuple(
     timestamp: Any, ip: Any, port: Any, protocol: Any
 ) -> LogRecord:
-    """Parse un événement de connexion ``(ts, ip, port, protocole)``."""
-    source: ConnectionMeta = (parse_ip(ip), parse_port(port), str(protocol))
+    """Parse une connexion (horodatage, ip, port, protocole)."""
+    source = (parse_ip(ip), parse_port(port), str(protocol))
     return build_record(
         timestamp=parse_timestamp(timestamp),
-        level="INFO",
+        level="INFO",  # une connexion n'a pas de niveau : INFO par défaut
         source=source,
         user_id=None,
         payload={"event": "connection", "port": source[1]},

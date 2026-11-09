@@ -1,22 +1,28 @@
-import 'dart:convert';
-import 'dart:io';
+// Interface graphique du projet (bonus, non demandée par l'énoncé).
+//
+// Elle ne fait aucun calcul : elle lance main.py, attend la fin, puis lit les
+// deux fichiers JSON écrits dans output/ et affiche les résultats par module.
+
+import 'dart:convert'; // pour jsonDecode
+import 'dart:io'; // pour lancer main.py et lire les fichiers
 
 import 'package:flutter/material.dart';
 
-// styles
-// le bleu vert du logo de l'ece
+// --- Styles ---
+// Le bleu-vert du logo de l'ECE.
 const couleurEce = Color(0xFF00737A);
 const gras = TextStyle(fontWeight: FontWeight.bold);
 
-// point de depart de l'appli
+// Point de départ de l'application.
 void main() {
   runApp(const MaterialApp(
-    debugShowCheckedModeBanner: false, // enleve le bandeau debug
+    debugShowCheckedModeBanner: false, // enlève le bandeau "debug"
     home: Accueil(),
   ));
 }
 
-// stateful car la page change apres l'analyse
+// Widget "stateful" : son contenu change après l'analyse. Flutter sépare le
+// widget (Accueil) de son état (_AccueilState), qui garde les données.
 class Accueil extends StatefulWidget {
   const Accueil({super.key});
 
@@ -25,36 +31,39 @@ class Accueil extends StatefulWidget {
 }
 
 class _AccueilState extends State<Accueil> {
-  // ce que l'utilisateur tape dans le champ
+  // Contenu de la barre de saisie.
   TextEditingController fichier = TextEditingController();
-  // contenu des json, null tant qu'on a rien lance
+  // Contenu des fichiers JSON. "?" : ils valent null tant qu'il n'y a pas
+  // eu d'analyse.
   Map? analyse;
   Map? audit;
-  String message = ''; // en cours, erreur...
+  String message = ''; // texte d'état : analyse en cours ou erreur
 
-  // quand on clique sur le bouton
+  // Appelée quand on clique sur le bouton. "async" permet d'attendre la fin
+  // de main.py avec "await" sans bloquer l'interface.
   void lancer() async {
-    // on vide l'ancien resultat
+    // setState redessine la page avec les nouvelles valeurs.
     setState(() {
       analyse = null;
       message = 'Analyse en cours...';
     });
 
-    // si le champ est vide main.py prend tout data/
+    // Si le champ est vide, main.py analyse tous les fichiers de data/.
     List<String> arguments = ['main.py'];
     if (fichier.text != '') {
       arguments.add('--files');
       arguments.add(fichier.text);
     }
 
-    // .. car on lance l'appli depuis gui/
+    // Lance Python dans le dossier parent, car l'appli démarre depuis gui/.
     var resultat = await Process.run(
       'python3',
       arguments,
       workingDirectory: '..',
     );
 
-    // si main.py plante on affiche l'erreur python
+    // Un code de sortie différent de 0 signifie que main.py a échoué : on
+    // affiche le message d'erreur de Python.
     if (resultat.exitCode != 0) {
       setState(() {
         message = 'Erreur : ${resultat.stderr}';
@@ -62,11 +71,11 @@ class _AccueilState extends State<Accueil> {
       return;
     }
 
-    // main.py ecrit les resultats dans output/
+    // main.py a écrit ses résultats dans output/.
     String texteAnalyse = File('../output/analysis_report.json').readAsStringSync();
     String texteAudit = File('../output/audit_report.json').readAsStringSync();
 
-    // setState pour que la page se mette a jour
+    // On convertit le texte JSON en Map, puis on redessine la page.
     setState(() {
       analyse = jsonDecode(texteAnalyse);
       audit = jsonDecode(texteAudit);
@@ -74,9 +83,10 @@ class _AccueilState extends State<Accueil> {
     });
   }
 
+  // Flutter appelle build à chaque setState pour construire la page.
   @override
   Widget build(BuildContext context) {
-    // tout ce qui s'affiche, on rajoute les resultats en dessous
+    // Le haut de la page : le champ, le bouton et le message d'état.
     List<Widget> lignes = [
       TextField(
         controller: fichier,
@@ -92,20 +102,21 @@ class _AccueilState extends State<Accueil> {
       Text(message),
     ];
 
-    // les resultats seulement apres une analyse
+    // On n'ajoute les résultats qu'après une analyse. Le "!" indique à Dart
+    // que la variable n'est plus null ici.
     if (analyse != null) {
-      // les differentes parties du json
+      // Les différentes parties du rapport JSON.
       Map pipeline = analyse!['pipeline'];
       Map stats = analyse!['statistics'];
       Map ensembles = analyse!['ip_sets'];
       Map forceBrute = analyse!['brute_force'];
       Map regles = analyse!['rules']['hits_by_rule'];
 
-      // generateurs yield / yield from
+      // Module 1 : générateurs yield / yield from.
       lignes.add(const Text('\nModule 1 : ingestion', style: gras));
       lignes.add(Text('Lignes lues : ${pipeline['raw_entries']}'));
 
-      // filter, map et match-case (raw, dict, tuple)
+      // Module 2 : filter, map et match-case (raw, dict, tuple).
       lignes.add(const Text('\nModule 2 : pipeline', style: gras));
       lignes.add(Text('Logs valides : ${pipeline['valid_records']}'));
       lignes.add(Text('Entrées rejetées : ${pipeline['rejected']}'));
@@ -113,7 +124,7 @@ class _AccueilState extends State<Accueil> {
         lignes.add(Text('Format $format : ${stats['by_format'][format]}'));
       }
 
-      // set / frozenset, defaultdict et force brute
+      // Module 3 : set / frozenset, defaultdict et force brute.
       lignes.add(const Text('\nModule 3 : agrégation', style: gras));
       lignes.add(Text('IP uniques avec erreurs : ${stats['error_ips'].length}'));
       lignes.add(Text('Union : ${ensembles['union'].length}'));
@@ -123,11 +134,11 @@ class _AccueilState extends State<Accueil> {
       for (var categorie in stats['by_category'].keys) {
         lignes.add(Text('Catégorie $categorie : ${stats['by_category'][categorie]}'));
       }
-      // complete = true si le else du while a ete execute
+      // complete vaut true si le else du while a été exécuté.
       lignes.add(Text('Attaques force brute : ${forceBrute['alerts'].length}'));
       lignes.add(Text('Détection complète : ${forceBrute['complete']}'));
 
-      // apply_security_rules et audit avec globals() / locals()
+      // Module 4 : apply_security_rules et audit avec globals() / locals().
       lignes.add(const Text('\nModule 4 : règles et audit', style: gras));
       for (var regle in regles.keys) {
         lignes.add(Text('$regle : ${regles[regle]}'));
@@ -136,7 +147,7 @@ class _AccueilState extends State<Accueil> {
       lignes.add(Text('Variables locals() : ${audit!['audit_function_locals'].length}'));
     }
 
-    // barre en haut + liste qui defile
+    // Structure de la page : une barre en haut et une liste qui défile.
     return Scaffold(
       appBar: AppBar(
         title: const Text('LogStream'),

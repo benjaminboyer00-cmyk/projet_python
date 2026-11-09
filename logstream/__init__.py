@@ -1,33 +1,17 @@
 """
-logstream - Moteur de traitement et d'analyse de flux de logs sécurisé.
+Package logstream : moteur d'analyse de logs.
 
-Organisation du package (correspond aux modules du cahier des charges) :
+Chaque fichier correspond à une partie de l'énoncé :
 
-* ``ingestion``   : Module 1 - générateurs mémoire (yield / yield from).
-* ``parsing``     : Module 1 - parsing des lignes en dictionnaires.
-* ``pipeline``    : Module 2 - filter / map / lambda et routage match-case.
-* ``aggregation`` : Module 3 - set / frozenset / defaultdict.
-* ``detection``   : Module 3 - détection de force brute (while/for/else).
-* ``rules``       : Module 4 - moteur de règles ``*args`` / ``**kwargs``.
-* ``audit``       : Module 4 - introspection via ``globals()`` / ``locals()``.
+* ingestion.py   : module 1, lecture des fichiers avec des générateurs ;
+* parsing.py     : module 1, découpage des lignes en dictionnaires ;
+* pipeline.py    : module 2, map, filter, lambda et match-case ;
+* aggregation.py : module 3, set, frozenset et defaultdict ;
+* detection.py   : module 3, détection de force brute (while/for/else) ;
+* rules.py       : module 4, moteur de règles (*args et **kwargs) ;
+* audit.py       : module 4, audit avec globals() et locals().
 
-Modules utilitaires : ``config``, ``models``, ``exceptions``,
-``simulator`` (génération de données de test) et ``reporting``.
+Les autres fichiers sont des outils communs : config.py (constantes),
+models.py (types), exceptions.py (erreurs), simulator.py (données de test)
+et reporting.py (affichage et export JSON).
 """
-
-__version__ = "1.0.0"
-
-__all__ = [
-    "aggregation",
-    "audit",
-    "config",
-    "detection",
-    "exceptions",
-    "ingestion",
-    "models",
-    "parsing",
-    "pipeline",
-    "reporting",
-    "rules",
-    "simulator",
-]

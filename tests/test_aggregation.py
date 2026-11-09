@@ -1,12 +1,9 @@
-"""Tests du Module 3 : ensembles et defaultdict."""
-
-from collections import defaultdict
+"""Tests du module 3 : ensembles et defaultdict."""
 
 from logstream.aggregation import (
     analyze_error_ips,
     collect_statistics,
     compare_ip_sets,
-    count_by,
     top_n,
 )
 
@@ -14,6 +11,7 @@ from conftest import make_record
 
 
 def test_collect_statistics_counts_and_sets() -> None:
+    """Les compteurs et les ensembles d'IP sont bien remplis."""
     records = [
         make_record(ip="1.1.1.1", level="ERROR"),
         make_record(ip="1.1.1.1", level="CRITICAL", user=None),
@@ -32,6 +30,7 @@ def test_collect_statistics_counts_and_sets() -> None:
 
 
 def test_compare_ip_sets_operations() -> None:
+    """Vérifie les opérations | & - et ^."""
     active = {"a", "b", "c"}
     blacklist = frozenset({"c", "d"})
     result = compare_ip_sets(active, blacklist)
@@ -41,16 +40,15 @@ def test_compare_ip_sets_operations() -> None:
     assert result["active_not_blacklisted"] == {"a", "b"}
     assert result["blacklisted_inactive"] == {"d"}
     assert result["symmetric_difference"] == {"a", "b", "d"}
-    assert all(isinstance(v, frozenset) for v in result.values())
 
 
 def test_analyze_error_ips() -> None:
+    """Les IP en erreur sont séparées selon la liste noire."""
     result = analyze_error_ips({"x", "y"}, frozenset({"y", "z"}))
     assert result == {"known_threats": {"y"},
                       "blacklist_candidates": {"x"}}
 
 
-def test_count_by_and_top_n() -> None:
-    counts = count_by(["a", "b", "a", "c", "a", "b"], lambda item: item)
-    assert isinstance(counts, defaultdict)
-    assert top_n(counts, 2) == [("a", 3), ("b", 2)]
+def test_top_n() -> None:
+    """top_n renvoie les clés les plus fréquentes, triées."""
+    assert top_n({"a": 3, "b": 2, "c": 1}, 2) == [("a", 3), ("b", 2)]

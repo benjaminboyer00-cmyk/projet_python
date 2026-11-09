@@ -1,28 +1,19 @@
-"""Exceptions personnalisées du moteur de traitement de logs."""
+"""
+Exceptions du projet.
+
+Avoir nos propres exceptions permet de distinguer nos erreurs de celles de
+Python. Toutes héritent de LogEngineError : un seul "except LogEngineError"
+suffit donc à les attraper toutes.
+"""
 
 
 class LogEngineError(Exception):
-    """Classe de base de toutes les erreurs du projet."""
+    """Classe mère de toutes les erreurs du projet."""
 
 
 class LogParseError(LogEngineError):
-    """Levée lorsqu'une ligne ou une entrée ne peut pas être parsée.
-
-    Attributes:
-        raw: l'entrée brute (tronquée) à l'origine de l'erreur.
-    """
-
-    def __init__(self, message: str, raw: object = None) -> None:
-        super().__init__(message)
-        self.raw = raw
-
-    def __str__(self) -> str:
-        base = super().__str__()
-        if self.raw is None:
-            return base
-        preview = repr(self.raw)[:60]
-        return f"{base} (entrée : {preview})"
+    """Une ligne de log ne peut pas être lue (format incorrect)."""
 
 
 class RuleEngineError(LogEngineError):
-    """Levée lorsque le moteur de règles est mal configuré."""
+    """Le moteur de règles est mal utilisé (règle inconnue, aucun flux...)."""
