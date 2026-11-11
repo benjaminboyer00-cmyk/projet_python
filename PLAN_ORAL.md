@@ -481,5 +481,3 @@ flutter create --platforms=linux .
 - [ ] Ouvrir le rapport à l'avance dans Jupyter, sur le graphique de mémoire.
 - [ ] Répéter les transitions entre les intervenants.
 - [ ] Chacun relit les commentaires des fichiers de sa partie.
-- [ ] Corriger l'orthographe du nom d'Ilyan : « Lalmassi » dans le README, « Dalmassi »
-      dans le rapport.
