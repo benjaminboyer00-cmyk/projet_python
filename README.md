@@ -4,6 +4,15 @@ Projet final de Python, ING3.
 
 Équipe : Benjamin Boyer, Gabriel Guery, Ismail Yacoub et Ilyan Lalmassi.
 
+| Membre | Rôle | Fichiers |
+| --- | --- | --- |
+| Benjamin Boyer | Introduction et back-end Python | `README.md`, `main.py`, `logstream/` |
+| Ismail Yacoub | Présentation, démonstration, données et tests | `data/`, `scripts/`, `logstream/simulator.py`, `notebooks/`, `tests/` |
+| Gabriel Guery | Front-end Flutter (affichage) | `gui/lib/main.dart` (`build`), `gui/pubspec.yaml` |
+| Ilyan Lalmassi | Lien entre le front et le back | `gui/lib/main.dart` (`lancer`), `logstream/reporting.py` (export JSON), `output/` |
+
+Le détail de chaque partie est dans `PLAN_ORAL.md`.
+
 ## Présentation
 
 Ce programme en ligne de commande lit des fichiers de logs (serveur web,
