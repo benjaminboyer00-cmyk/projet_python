@@ -39,8 +39,8 @@ class BruteForceAlert:
 
     def __str__(self) -> str:
         duration = (self.last_attempt - self.first_attempt).total_seconds()
-        return (f"{self.ip:>15} : {self.attempts} échecs en "
-                f"{duration:.0f}s sur {', '.join(self.targets)}")
+        return (f"{self.ip} : {self.attempts} échecs en {duration:.0f} s "
+                f"sur {', '.join(self.targets)}")
 
 
 @dataclass

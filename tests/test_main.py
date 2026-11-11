@@ -14,7 +14,7 @@ def test_main_runs_on_sample(sample_log_file: Path, tmp_path: Path,
     code = main.main(["--files", str(sample_log_file),
                       "--output-dir", str(tmp_path)])
     assert code == 0
-    assert "MODULE 4" in capsys.readouterr().out
+    assert "Module 4" in capsys.readouterr().out
 
     report = json.loads((tmp_path / "analysis_report.json").read_text(
         encoding="utf-8"))
@@ -44,7 +44,7 @@ def test_main_max_alerts_interrupts_detection(
     """--max-alerts déclenche le break de la détection."""
     assert main.main(["--max-alerts", "1",
                       "--output-dir", str(tmp_path)]) == 0
-    assert "INTERROMPUE" in capsys.readouterr().out
+    assert "analyse interrompue" in capsys.readouterr().out
 
 
 def test_main_default_dataset_has_no_rule_errors(

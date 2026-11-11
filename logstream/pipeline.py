@@ -134,13 +134,13 @@ def normalize_record(record: LogRecord) -> LogRecord:
     user_id = record["user_id"].strip().lower() if record["user_id"] else None
     payload = clean_payload(record["payload"])
 
-    # Dans une f-string, ":<8" aligne à gauche sur 8 caractères et ":>15"
-    # aligne à droite sur 15. Les colonnes restent ainsi bien alignées.
+    # f-string : ":%Y-%m-%d %H:%M:%S" met la date en forme et ":<8"
+    # complète le niveau avec des espaces jusqu'à 8 caractères, pour que la
+    # suite de la ligne commence toujours au même endroit.
     message = (
         f"[{record['timestamp']:%Y-%m-%d %H:%M:%S}] {level:<8} "
-        f"{ip:>15}:{port:<5} {protocol:<5} "
-        f"user={user_id or ANONYMOUS_USER:<10} "
-        f"{record['category']:<7} {summarize_payload(payload)}"
+        f"{ip}:{port}/{protocol} {user_id or ANONYMOUS_USER} "
+        f"({record['category']}) {summarize_payload(payload)}"
     )
     # {**record, ...} copie le log puis remplace les champs indiqués.
     return {

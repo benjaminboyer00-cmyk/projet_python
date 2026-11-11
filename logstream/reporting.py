@@ -9,14 +9,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from logstream.aggregation import TrafficStatistics
+from logstream.aggregation import TrafficStatistics, top_n
 from logstream.config import SEVERITY_ORDER
 from logstream.detection import DetectionResult
 from logstream.rules import RuleEngineReport
 
 logger = logging.getLogger(__name__)
 
-WIDTH = 72  # largeur des titres dans le terminal
+SHOWN_ALERTS = 5  # nombre d'attaques affichées en exemple
 
 
 # --- Export JSON -------------------------------------------------------------
@@ -51,42 +51,28 @@ def export_json(data: Any, path: Path) -> Path:
     return path
 
 
-# --- Outils d'affichage ------------------------------------------------------
+# --- Affichage dans le terminal ----------------------------------------------
 
-def title(text: str) -> str:
-    """Renvoie un titre de section encadré."""
-    return f"\n{'=' * WIDTH}\n {text}\n{'=' * WIDTH}"
-
-
-def format_counter(counter: Mapping[str, int], order: tuple[str, ...] = (),
-                   limit: int = 10) -> str:
-    """Formate un compteur en lignes "clé  valeur  ###"."""
+def list_counts(counter: Mapping[str, int], order: tuple[str, ...] = (),
+                limit: int = 10) -> str:
+    """Écrit un compteur sur une ligne : "INFO 120, WARNING 8, ..."."""
     if order:  # ordre imposé, par exemple les niveaux de sévérité
-        items = [(key, counter.get(key, 0)) for key in order]
+        keys = list(order)
     else:  # sinon, du plus grand au plus petit
-        items = sorted(counter.items(), key=lambda pair: pair[1],
-                       reverse=True)[:limit]
+        keys = sorted(counter, key=lambda key: counter[key],
+                      reverse=True)[:limit]
+    return ", ".join(f"{key} {counter.get(key, 0)}" for key in keys)
 
-    maximum = max((count for _, count in items), default=0)
-    lines = []
-    for key, count in items:
-        # Longueur de la barre proportionnelle à la plus grande valeur.
-        bar = "#" * (round(30 * count / maximum) if maximum else 0)
-        lines.append(f"  {key:<22} {count:>7}  {bar}")
-    return "\n".join(lines)
-
-
-# --- Affichage de chaque module ----------------------------------------------
 
 def print_ingestion(metrics: Mapping[str, int], preview: list[str]) -> None:
     """Affiche le bilan des modules 1 et 2."""
-    print(title("MODULES 1 & 2 - Ingestion et pipeline"))
-    print(f"  Entrées brutes lues     : {metrics['raw_entries']:>8}")
-    print(f"  Entrées non vides       : {metrics['non_empty_entries']:>8}")
-    print(f"  Enregistrements parsés  : {metrics['parsed_records']:>8}")
-    print(f"  Enregistrements valides : {metrics['valid_records']:>8}")
-    print(f"  Entrées rejetées        : {metrics['rejected']:>8}")
-    print("\n  Aperçu des logs normalisés :")
+    print("Modules 1 et 2 : lecture et nettoyage")
+    print(f"  {metrics['raw_entries']} lignes lues, dont "
+          f"{metrics['raw_entries'] - metrics['non_empty_entries']} vides "
+          "ou commentaires.")
+    print(f"  {metrics['valid_records']} logs valides, "
+          f"{metrics['rejected']} lignes rejetées.")
+    print("  Premiers logs normalisés :")
     for message in preview:
         print(f"    {message}")
 
@@ -95,64 +81,60 @@ def print_statistics(stats: TrafficStatistics,
                      ip_sets: dict[str, frozenset[str]],
                      error_analysis: dict[str, frozenset[str]]) -> None:
     """Affiche le bilan du module 3 (statistiques)."""
-    print(title("MODULE 3 - Agrégation"))
-    print(f"  Période : du {stats.first_timestamp} au {stats.last_timestamp}")
-    print("\n  Répartition par niveau :")
-    print(format_counter(stats.by_level, order=SEVERITY_ORDER))
-    print("\n  Répartition par catégorie :")
-    print(format_counter(stats.by_category))
-    print("\n  Répartition par format d'origine :")
-    print(format_counter(stats.by_format))
-    print("\n  Utilisateurs les plus actifs :")
-    print(format_counter(stats.by_user, limit=5))
+    print("\nModule 3 : statistiques")
+    print(f"  Logs du {stats.first_timestamp:%d/%m/%Y %H:%M} "
+          f"au {stats.last_timestamp:%d/%m/%Y %H:%M}.")
+    print(f"  Niveaux : {list_counts(stats.by_level, order=SEVERITY_ORDER)}")
+    print(f"  Catégories : {list_counts(stats.by_category)}")
+    print(f"  Formats : {list_counts(stats.by_format)}")
+    print("  Utilisateurs les plus actifs : "
+          f"{list_counts(stats.by_user, limit=3)}")
+    print(f"  {len(stats.active_ips)} IP actives, dont "
+          f"{len(stats.error_ips)} avec des erreurs. "
+          f"{len(stats.connections)} connexions différentes.")
 
-    print(f"\n  IP actives uniques       : {len(stats.active_ips)}")
-    print(f"  IP ayant généré des erreurs : {len(stats.error_ips)}")
-    print(f"  Connexions uniques       : {len(stats.connections)}")
-
-    print("\n  Opérations entre IP actives et liste noire :")
-    for name, ips in ip_sets.items():
-        print(f"    {name:<24} {len(ips):>4} IP")
-
-    print("\n  IP en erreur déjà blacklistées : "
-          f"{sorted(error_analysis['known_threats'])}")
-    print("  IP en erreur à surveiller (les plus actives) :")
+    print("  Comparaison avec la liste noire : "
+          f"union {len(ip_sets['union'])}, "
+          f"intersection {len(ip_sets['intersection'])}, "
+          f"différence {len(ip_sets['active_not_blacklisted'])}, "
+          f"différence symétrique {len(ip_sets['symmetric_difference'])}.")
+    print("  IP en erreur déjà sur la liste noire : "
+          f"{', '.join(sorted(error_analysis['known_threats']))}")
     candidates = {ip: stats.errors_by_ip[ip]
                   for ip in error_analysis["blacklist_candidates"]}
-    print(format_counter(candidates, limit=5))
+    watched = [f"{ip} ({count} erreurs)" for ip, count in top_n(candidates, 3)]
+    print(f"  IP en erreur à surveiller : {', '.join(watched)}")
 
 
 def print_detection(result: DetectionResult, threshold: int) -> None:
     """Affiche le bilan de la détection de force brute."""
-    print(title(f"MODULE 3 - Détection de force brute (seuil {threshold})"))
-    print(f"  Événements analysés  : {result.processed_events}")
-    print(f"  Événements d'auth.   : {result.auth_events}")
-    print(f"  Échecs de connexion  : {result.failed_logins}")
-    print(f"  Cycles complets      : {result.completed_cycles}")
-    print(f"  Analyse              : "
-          f"{'complète' if result.complete else 'INTERROMPUE'}")
-    print(f"  Attaques détectées   : {len(result.alerts)}")
-    for alert in result.alerts[:10]:  # on n'affiche que les 10 premières
-        print(f"    - {alert}")
-    if len(result.alerts) > 10:
-        print(f"    ... ({len(result.alerts) - 10} autres)")
+    state = "complète" if result.complete else "interrompue"
+    print(f"\nModule 3 : force brute (alerte à {threshold} échecs)")
+    print(f"  {result.failed_logins} échecs de connexion sur "
+          f"{result.auth_events} tentatives.")
+    print(f"  {len(result.alerts)} attaques trouvées, analyse {state} "
+          f"({result.completed_cycles} lots traités en entier).")
+    for alert in result.alerts[:SHOWN_ALERTS]:
+        print(f"    {alert}")
+    if len(result.alerts) > SHOWN_ALERTS:
+        print(f"    et {len(result.alerts) - SHOWN_ALERTS} autres.")
 
 
 def print_rules(report: RuleEngineReport) -> None:
     """Affiche le bilan du moteur de règles."""
-    print(title("MODULE 4 - Moteur de règles"))
-    print(f"  Règles appliquées : {', '.join(report.rules_applied)}")
-    print(f"  Paramètres        : {report.config}")
-    print(f"  Logs contrôlés    : {report.records_checked}")
-    print(f"  Alertes           : {report.total_hits}"
-          f"{' (arrêt anticipé)' if report.interrupted else ''}")
-    print(format_counter(report.hits_by_rule))
+    print("\nModule 4 : règles de sécurité")
+    print(f"  {len(report.rules_applied)} règles appliquées sur "
+          f"{report.records_checked} logs, options reçues : "
+          f"{', '.join(report.config) or 'aucune'}.")
+    stop = " (arrêt anticipé)" if report.interrupted else ""
+    print(f"  {report.total_hits} alertes{stop} : "
+          f"{list_counts(report.hits_by_rule)}")
     if report.rule_errors:
-        print(f"  Erreurs de règles : {dict(report.rule_errors)}")
+        print(f"  Règles en erreur : {dict(report.rule_errors)}")
 
-    print("\n  Exemples d'alertes :")
+    print("  Un exemple par règle :")
     seen: set[str] = set()  # règles dont on a déjà montré un exemple
     for alert in report.alerts:
         if alert["rule"] not in seen:
             seen.add(alert["rule"])
-            print(f"    [{alert['rule']}] {alert['ip']} : {alert['detail']}")
+            print(f"    {alert['rule']} : {alert['detail']}")

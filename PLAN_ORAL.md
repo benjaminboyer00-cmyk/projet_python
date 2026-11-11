@@ -406,7 +406,7 @@ comment le moteur produit ces résultats. »
 | `else` du `for` | Pas de `break` : le cycle est complet (31 cycles sur le jeu de test) |
 | `else` du `while` | Pas de `break` : tout le flux est analysé, `complete = True` |
 
-À montrer : `python main.py --max-alerts 3` affiche « INTERROMPUE ».
+À montrer : `python main.py --max-alerts 3` affiche « analyse interrompue ».
 
 **Module 4 : règles et audit**
 
@@ -417,7 +417,7 @@ comment le moteur produit ces résultats. »
 - `available_rules` utilise `globals()` : écrire une fonction `rule_...` suffit à
   l'ajouter au moteur.
 - L'audit reçoit `globals()` et `locals()` de `main.py` et de `run()`. Il décrit le type,
-  la taille et un aperçu de chaque variable (38 globales, 17 locales).
+  la taille et un aperçu de chaque variable (37 globales, 17 locales).
 
 **Pourquoi la mémoire reste faible :** on ne garde que les compteurs, les ensembles d'IP,
 un lot de 500 logs au maximum et des alertes. Les alertes des règles sont limitées à 1 000.

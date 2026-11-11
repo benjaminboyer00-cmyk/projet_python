@@ -57,7 +57,6 @@ from logstream.reporting import (
     print_ingestion,
     print_rules,
     print_statistics,
-    title,
 )
 from logstream.rules import apply_security_rules, get_rules
 from logstream.simulator import simulate_stream
@@ -189,11 +188,10 @@ def run(args: argparse.Namespace) -> int:
         run_locals=locals(),
     )
 
-    print(title("Performances et rapports"))
-    print(f"  Durée des 3 parcours : {elapsed:.2f} s")
-    print(f"  Pic mémoire          : {peak_memory / 1024:.1f} Kio")
-    print(f"  Rapport d'analyse    : {report_path}")
-    print(f"  Rapport d'audit      : {audit_path}")
+    print(f"\nAnalyse terminée en {elapsed:.1f} s, "
+          f"avec un pic mémoire de {peak_memory / 1024 / 1024:.1f} Mo.")
+    print(f"Rapports enregistrés dans {output_dir} : "
+          f"{report_path.name} et {audit_path.name}.")
     return 0
 
 

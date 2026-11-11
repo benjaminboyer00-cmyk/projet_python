@@ -65,7 +65,7 @@ def test_normalize_record_does_not_mutate_input() -> None:
     assert normalized["user_id"] == "alice"
     assert normalized["source"][2] == "SSH"
     assert normalized["payload"] == "a b"
-    assert "user=alice" in normalized["message"]
+    assert " alice " in normalized["message"]
     assert original["level"] == " warning "  # l'original n'a pas changé
 
 
